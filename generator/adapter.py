@@ -141,7 +141,14 @@ def build_horizon_context(profile: dict) -> HorizonContext:
 # ---------------------------------------------------------------------------
 
 def build_decision_log(planner_result: dict, llm_ok: bool, timestamp: str) -> list[dict]:
-    """Per-slot журнал происхождения: откуда взят каждый обязательный факт."""
+    """Per-slot журнал происхождения: откуда взят каждый обязательный факт.
+
+    confidence присутствует на КАЖДОЙ записи, не только llm-assisted (спецификация
+    Ф1 §2 показывает его на direct-примере тоже — единообразная схема, а не
+    опциональное поле). Для derived — 1.0: bottleneck-first в planner.py либо
+    находит конкретный элемент детерминированно, либо возвращает None (тогда
+    ниже это уже llm-assisted); частичной уверенности здесь не бывает.
+    """
     element_id = planner_result["plan_skeleton"]["element_id"]
     entries = [
         {
@@ -149,6 +156,7 @@ def build_decision_log(planner_result: dict, llm_ok: bool, timestamp: str) -> li
             "source_file": "planner.py",
             "source_field": planner_result["decision_log"].get("element_choice", ""),
             "extraction_method": "derived" if element_id else "llm-assisted",
+            "confidence": 1.0 if element_id else None,  # llm-assisted: policy проставит ниже
             "timestamp": timestamp,
         },
     ]
@@ -159,6 +167,7 @@ def build_decision_log(planner_result: dict, llm_ok: bool, timestamp: str) -> li
                 "source_file": "llm_backend",
                 "source_field": "narrative",
                 "extraction_method": "llm-assisted",
+                "confidence": None,  # policy проставит в apply_hard_fail_gate
                 "timestamp": timestamp,
             }
         )
@@ -166,7 +175,12 @@ def build_decision_log(planner_result: dict, llm_ok: bool, timestamp: str) -> li
 
 
 def apply_hard_fail_gate(decision_log: list[dict], policy: dict) -> tuple[bool, str]:
-    """Проверяет required_attribution_slots. Возвращает (passed, reason).
+    """Проверяет ТОЛЬКО происхождение (required_attribution_slots). Возвращает (passed, reason).
+
+    Это первая из двух проверок в конвейере, не единственная: непустота самого
+    контента (narrative/plan_day) — отдельная проверка сразу после вызова этой
+    функции, в generate_daily_plan (независимая находка ревью — валидный JSON
+    с пустым содержимым мог пройти ЭТУ функцию, раз атрибуция в порядке).
 
     confidence для extraction_method="llm-assisted" — константа из policy
     (задана автором policy заранее), не вычисляется здесь и не самооценивается

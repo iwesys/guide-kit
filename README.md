@@ -2,7 +2,7 @@
 
 Two open, local-first tools that turn your own notes into a personal development guide — using your own AI assistant, on your own machine.
 
-**Status:** scaffold only. Not yet functional — core is being extracted from an internal prototype (see Roadmap below).
+**Status:** generator core works end-to-end locally (deterministic planner + adapter + hard-fail policy — see Roadmap below). Structurer and the two invitation steps are not built yet.
 
 ## What it does
 
@@ -25,11 +25,21 @@ guide-kit/
 └── generator/    # assembles the guide from structured output + your AI assistant
 ```
 
+## Usage (generator core)
+
+```bash
+cd generator
+cp ../guide-kit.config.yaml.example ../guide-kit.config.yaml   # edit: pick a backend, set a key or point at a local model
+python3 adapter.py --profile profile.yaml --config ../guide-kit.config.yaml
+```
+
+No `profile.yaml`? That's a valid cold start — you get a generic first plan instead of an error. No `curriculum_path` configured? The planner picks a generic practice on its own and marks it `llm-assisted` in the decision log instead of failing or inventing a source. A required fact with no source at all — not even an LLM attempt — produces a diagnostic YAML explaining what's missing, never a silently empty or made-up guide.
+
 ## Roadmap
 
-This repository is currently a scaffold (folders + license only). Core logic is being extracted from a working internal prototype in stages:
+Core logic is being extracted from a working internal prototype in stages:
 
-1. Generator core (deterministic planner + thin LLM adapter, no cloud dependencies)
+1. ✅ Generator core (deterministic planner + thin LLM adapter, no cloud dependencies)
 2. Structurer (folder-based + per-file classification, mandatory quarantine)
 3. Two optional invitation steps (connect to a hosted service; adopt the full toolkit) — entirely opt-in, never required
 4. Portability tests: your data must be exportable in under an hour, runnable on a new machine in under a day, and speak only open protocols (no vendor-locked APIs)

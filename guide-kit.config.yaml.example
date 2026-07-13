@@ -1,0 +1,30 @@
+# guide-kit.config.yaml — example configuration.
+# Copy to guide-kit.config.yaml (git-ignored — may hold an API key) and fill in.
+
+# Optional: path to a local copy of curriculum content (worldview elements).
+# Not set → guide-kit still works: the LLM picks a worldview element on its
+# own, and the decision log honestly marks that slot as "llm-assisted".
+curriculum_path: null
+
+# Optional: path to local practice card content (concrete can-do/task/assessment
+# text for a chosen element). Not set → the same graceful fallback as above.
+cards_path: null
+
+# Which backend to use: anthropic | openai_compatible | local
+llm_backend: anthropic
+
+# Required for openai_compatible; optional override for local (default
+# http://localhost:8080/v1, matching most local OpenAI-compatible servers).
+llm_base_url: null
+
+# Model name. Not set → the backend's own default.
+llm_model: null
+
+# API key. Prefer the GUIDE_KIT_LLM_API_KEY environment variable over
+# writing it here — this file is git-ignored either way.
+#
+# Note: one key field serves all three backends. If you switch llm_backend
+# to "local" for privacy, also clear this field (or the env var) — otherwise
+# a leftover cloud-provider key would be sent to whatever llm_base_url points
+# at, which matters if that URL is ever wrong (typo, stale tunnel).
+llm_api_key: null

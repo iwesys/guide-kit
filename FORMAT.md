@@ -83,40 +83,43 @@ Applies only where `homes.yaml` didn't already decide (no match, or `type: "auto
 
 ## 4. `type-index.json` — classifier output
 
-One JSON file, one entry per source path (the *original* path — see §1 rule 2 for how media entries relate to their transcripts).
+One JSON file, one entry per source path (the *original* path — see §1 rule 2 for how media entries relate to their transcripts), wrapped in a `schema_version` envelope (see §Versioning — every artifact in this format carries the same version number at the top).
 
 ```json
 {
-  "notes/2026/idea.md": {
-    "type": "2.3",
-    "mode": "index",
-    "confidence": 0.95,
-    "source": "homes",
-    "freshness": { "valid_from": "2026-05-01" }
-  },
-  "media/standup-2026-06-01.mp4": {
-    "type": "2.2",
-    "mode": "pointer",
-    "confidence": 0.7,
-    "source": "classifier-on-transcript",
-    "media": {
-      "kind": "video",
-      "derived_text": ".structurer/transcripts/media/standup-2026-06-01.mp4.md",
-      "extractor": "whisper-mlx",
-      "extracted_at": "2026-07-14"
-    }
-  },
-  "photos/whiteboard.png": {
-    "type": null,
-    "pending": "needs-extractor",
-    "note": "no OCR tool configured; placement-only if homes.yaml covers this path"
-  },
-  "inbox/voice-memo-with-a-colleagues-name.m4a": {
-    "type": null,
-    "quarantine": {
-      "reason": "third-party-pii",
-      "excluded_from_generation": true,
-      "detected_by": "quarantine-heuristic-on-transcript"
+  "schema_version": 1,
+  "files": {
+    "notes/2026/idea.md": {
+      "type": "2.3",
+      "mode": "index",
+      "confidence": 0.95,
+      "source": "homes",
+      "freshness": { "valid_from": "2026-05-01" }
+    },
+    "media/standup-2026-06-01.mp4": {
+      "type": "2.2",
+      "mode": "pointer",
+      "confidence": 0.7,
+      "source": "classifier-on-transcript",
+      "media": {
+        "kind": "video",
+        "derived_text": ".structurer/transcripts/media/standup-2026-06-01.mp4.md",
+        "extractor": "whisper-mlx",
+        "extracted_at": "2026-07-14"
+      }
+    },
+    "photos/whiteboard.png": {
+      "type": null,
+      "pending": "needs-extractor",
+      "note": "no OCR tool configured; placement-only if homes.yaml covers this path"
+    },
+    "inbox/voice-memo-with-a-colleagues-name.m4a": {
+      "type": null,
+      "quarantine": {
+        "reason": "third-party-pii",
+        "excluded_from_generation": true,
+        "detected_by": "quarantine-heuristic-on-transcript"
+      }
     }
   }
 }

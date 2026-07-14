@@ -1,0 +1,216 @@
+# FORMAT.md — guide-kit data format specification
+
+**Status:** normative. **`schema_version: 1`** across all artifacts below. Breaking changes bump this number; the Structurer refuses to write and the Generator refuses to read a mismatched version without an explicit `--allow-schema-mismatch` flag (deferred to implementation).
+
+## Who this is for
+
+You own a base of notes (Obsidian vault, Notion export, a folder of markdown, your own database export) and want the Structurer to classify it without reading guide-kit's source code. This document is the whole contract: six files, one pipeline order, one precedence rule for conflicts. If your data doesn't fit any of these shapes, `2.4` (see below) is the honest fallback, not an error.
+
+## Pipeline order
+
+```
+media preprocessing → homes.yaml → per-file classifier → quarantine → freshness → type-index.json
+```
+
+Each stage only narrows what the previous stage left undecided. A file that a sidecar override already typed skips every later stage; a file no stage can place lands as `2.4`, never as a guess.
+
+---
+
+## 1. Media preprocessing
+
+Binary files are never classified from their raw bytes — text is extracted first, then the extracted text goes through the same pipeline as any other file.
+
+| Format | Extractor | Status |
+|---|---|---|
+| `.md`, `.txt`, `.canvas` | none (already text) | built in |
+| audio, video | local transcription (MLX Whisper wrapper) | configurable, see `extractors.yaml` |
+| PDF | text layer first; empty layer → OCR queue | configurable |
+| images (`.png`, `.jpg`, scans) | OCR / vision description | **no default extractor — see §6** |
+| everything else | placement only (`homes.yaml`) | — |
+
+Rules:
+
+1. **A transcript is a derived file.** It lives at `.structurer/transcripts/<mirrored-path>.md`, never inside your own vault. Its frontmatter carries `derived_from`, `extractor`, `extracted_at`, `review_status: unreviewed`.
+2. **The type is assigned to the original file, not the transcript.** The transcript inherits the original's type and quarantine flags. The Generator reads the transcript's text, but `decision_log` cites the original as the source (with a pointer to `derived_text`).
+3. **Sidecar override wins over extraction.** See §5 — if you've already told the Structurer the type by hand, it does not spend time transcribing an hour of audio just to guess something you already know.
+4. **Quarantine heuristics run on transcripts too.** A recording can expose a third party's PII (another person's voice) even when the original file's metadata looks clean.
+5. **No extractor installed → honest gap, not a guess.** The file gets `"type": null, "pending": "needs-extractor"` in `type-index.json` and a line in the human-readable report (`.structurer/quarantine-report.md`'s sibling, the "unplaced" report). Content is never invented or inferred from the filename (same invariant as the classifier default in §3).
+
+---
+
+## 2. `homes.yaml` — placement-based typing
+
+The first, coarse pass: a folder pattern maps to a type.
+
+```yaml
+schema_version: 1
+homes:
+  - path: "daily-notes/**"
+    type: "2.2"
+  - path: "concepts/**"
+    type: "2.3"
+  - path: "journal/**"
+    type: "2.4"
+    note: "reflections — unformalized remainder by default"
+  - path: "archive/**"
+    type: "auto"          # explicitly defer to the per-file classifier (§3)
+```
+
+**Precedence rule (proposed, not backed by an existing convention — flag for confirmation before implementation):** the most specific matching glob wins (`daily-notes/2026/**` outranks `daily-notes/**`); ties break on file order, first match wins. A path with no matching rule, or matched to `type: "auto"`, falls through to §3.
+
+---
+
+## 3. Per-file classifier
+
+Applies only where `homes.yaml` didn't already decide (no match, or `type: "auto"`).
+
+**Order, highest to lowest:**
+
+1. Sidecar `<file>.meta.yaml` `type:` field (§5) — for files that have no frontmatter of their own (binaries: images, audio, proprietary formats). Sidecar and frontmatter never compete on the same file — a text file with frontmatter doesn't get a sidecar, a binary can't carry frontmatter. This is a partition by file kind, not a precedence contest.
+2. Frontmatter `type:` / `user_intent:` field inside the file itself (text files only) — an explicit human statement always outranks a heuristic.
+3. Structural signal:
+   - has an event date → `2.2`
+   - self-declared fact about the user → `2.1-declared`
+   - a computed rollup of a stream (e.g. a weekly summary auto-generated from daily notes) → `2.1-derived`, tagged `"mirror": true` so the Generator knows not to treat it as an independent source
+   - fits an established conceptual/methodical form (definitions, distinctions, methods) → `2.3`
+   - a record of the user's own decisions/reasoning trail → `2.4`
+4. LLM classification — **only** for files still ambiguous after 1–3, and only if an LLM backend is configured (`guide-kit.config.yaml`). Zero-config installs skip this step entirely.
+5. **Default: `2.4`.** If nothing above placed the file — including "LLM disabled" — it is `2.4`, not a guess at a more specific type. Guessing content is exactly the failure mode `guide-kit` refuses to have (same "no invented facts" invariant that governs the hard-fail gate in `generator/adapter.py` and the missing-extractor case in §1). This is a deliberate trade-off: a file that would read as `2.3` to a human eye may still land in `2.4` when the signal is genuinely ambiguous and no LLM is configured to break the tie. That's the honest failure mode, not silent misclassification.
+
+**Quarantine is cross-cutting**, not a fifth step: any of 1–4 can trigger it (see §4), and it takes priority over whatever type the step would otherwise have assigned.
+
+---
+
+## 4. `type-index.json` — classifier output
+
+One JSON file, one entry per source path (the *original* path — see §1 rule 2 for how media entries relate to their transcripts).
+
+```json
+{
+  "notes/2026/idea.md": {
+    "type": "2.3",
+    "mode": "index",
+    "confidence": 0.95,
+    "source": "homes",
+    "freshness": { "valid_from": "2026-05-01" }
+  },
+  "media/standup-2026-06-01.mp4": {
+    "type": "2.2",
+    "mode": "pointer",
+    "confidence": 0.7,
+    "source": "classifier-on-transcript",
+    "media": {
+      "kind": "video",
+      "derived_text": ".structurer/transcripts/media/standup-2026-06-01.mp4.md",
+      "extractor": "whisper-mlx",
+      "extracted_at": "2026-07-14"
+    }
+  },
+  "photos/whiteboard.png": {
+    "type": null,
+    "pending": "needs-extractor",
+    "note": "no OCR tool configured; placement-only if homes.yaml covers this path"
+  },
+  "inbox/voice-memo-with-a-colleagues-name.m4a": {
+    "type": null,
+    "quarantine": {
+      "reason": "third-party-pii",
+      "excluded_from_generation": true,
+      "detected_by": "quarantine-heuristic-on-transcript"
+    }
+  }
+}
+```
+
+Field reference:
+
+| Field | Meaning |
+|---|---|
+| `type` | `2.1-declared` \| `2.1-derived` \| `2.2` \| `2.3` \| `2.4` \| `null` — **`null` whenever `quarantine` is present** (quarantine is outside the 2.1-2.4 axis, not a fifth value on it), or when `pending` is present |
+| `mode` | `index` (full text usable directly) \| `pointer` (points elsewhere, e.g. at a transcript) \| `external` (referenced but not owned by this base — `path` to a base outside this vault, e.g. a shared team drive; named in `CONCEPT-portable-guide-generator.md` §Разметчик, not otherwise illustrated here) |
+| `confidence` | 0–1, classifier's own confidence; `homes.yaml` matches are `1.0` |
+| `source` | which stage decided: `homes` \| `sidecar` \| `frontmatter` \| `classifier` \| `classifier-on-transcript` \| `llm-assisted` \| `default` |
+| `freshness` | see §7 — present when the file has a determinable `valid_from` |
+| `media` | present only for files that went through §1; carries the transcript pointer |
+| `pending` | present only when `type` is `null` and the file isn't quarantined — always `"needs-extractor"` today, reserved for future pending reasons |
+| `quarantine` | present only when the file is out-of-axis (§4a) — `reason`, `excluded_from_generation`, `detected_by` |
+
+### 4a. Quarantine — outside the axis, not a value on it
+
+Quarantine is **not** one of the 2.1-2.4 types — a quarantined file is out-of-axis by definition (mirrors the concept's own framing: "карантин «вне оси»"). It is encoded as a sibling `quarantine` object on the entry, with `type: null`, not as a string value inside `type`. `reason` is one of `pii` \| `secret` \| `payment` \| `third-party-pii` (this enum, and the `excluded_from_generation`/`detected_by` field names, are this document's own proposal — the source concept names the buckets in prose only and doesn't specify a wire schema; flag for confirmation before implementation).
+
+There is no normative `quarantine.yaml` — quarantine status lives on the `type-index.json` entry itself, so the Generator's loader filters on one field (`quarantine` presence) instead of cross-referencing two files. The Structurer additionally writes `.structurer/quarantine-report.md` — a plain-language list of quarantined paths and reasons, meant for the human to skim and correct false positives, not a second source of truth.
+
+---
+
+## 5. Sidecar override — `<file>.meta.yaml`
+
+For binaries that have no frontmatter of their own (images, audio before transcription, proprietary formats).
+
+```yaml
+schema_version: 1
+type: "2.2"
+note: "team standup recording, 2026-06-01"
+speakers_third_party: true   # forces quarantine regardless of type above
+```
+
+`speakers_third_party: true` (or any future forced-quarantine flag) overrides `type` — a file can be both "I know what this is" and "this must not leave quarantine" at the same time.
+
+---
+
+## 6. `extractors.yaml` — pluggable media extractors
+
+```yaml
+schema_version: 1
+extractors:
+  - extensions: [".mp3", ".mp4", ".m4a", ".wav"]
+    command: "whisper-mlx"
+    output: "text"
+  - extensions: [".pdf"]
+    command: "pdf-text-layer"
+    fallback: "needs-ocr"
+```
+
+Zero-config default: plain text formats pass through untouched; Whisper is used automatically if it's installed, otherwise audio/video fall through to `pending: needs-extractor`. Add your own OCR command by adding an entry — the Structurer doesn't need code changes, only this file.
+
+---
+
+## 7. Freshness
+
+Freshness metadata is **optional per file** — a file that carries none is simply "age unknown" to downstream consumers, not an error. But **once a file asserts `valid_from`, it must also assert exactly one way to die**: expiration (a TTL, for naturally-decaying facts) or explicit replacement (`superseded_by`, for knowledge that's still true until something contradicts it). `valid_from` with neither is the malformed state — a partial assertion, not a valid minimal one.
+
+Frontmatter fields (text files) or `type-index.json`'s `freshness` block (everything else):
+
+```yaml
+valid_from: "2026-05-01"     # if present, one of the two fields below must also be present
+ttl_days: 180                 # OR superseded_by — not both
+superseded_by: null           # path or id of the fact that replaced this one
+```
+
+`2.1-declared`/`2.1-derived` facts typically use the TTL form (things about you drift). `2.3` conceptual knowledge typically uses `superseded_by` (a definition doesn't expire, it gets replaced).
+
+**`ttl_days` as the exact field name is this document's own proposal, not a confirmed convention** — the upstream freshness model (WP-476 §П4) specifies the two-mechanism shape (expiration vs. supersede) but not a wire field name for the expiration case; the closest existing implementation (`memory-lifecycle-spec.md`) uses `valid_from`/`superseded_by`/`status` with no TTL field at all. Confirm against WP-476's own artifact schema once it's finalized, rather than treating `ttl_days` here as settled.
+
+---
+
+## 8. `profile.yaml` — what the Structurer does *not* own
+
+`profile.yaml` is the Generator's input contract (RCS profile + four horizons: quarter/month/week/day + artifacts summary — the full shape lives in `generator/horizons.py`, `RCSProfile`/`HorizonContext`). **The Structurer does not populate this file.** It is filled by self-diagnosis (`/diagnose-lite`, 6 questions), a hand-written YAML, or a platform pull if the user is connected — none of which are Structurer concerns.
+
+What the Structurer *does* provide toward this contract: `type-index.json` and `residency.yaml` (§9) are separate artifacts the Generator's profile loader can optionally consult, not fields inside `profile.yaml` itself. A missing `profile.yaml` is a valid cold start (`generator/adapter.py` already treats it that way) — the Structurer doesn't need to produce one for the Generator to run.
+
+---
+
+## 9. Out of scope for this document
+
+**`residency.yaml`** is not specified here. It's an internal artifact under the DATA-RESIDENCY slots (guide-kit's storage layer already ships ResidencyGate code with its own schema for that file) — not a public contract a third party needs to hand-author. If you're only bringing your own data through the Structurer, you will never write this file by hand.
+
+---
+
+## Versioning
+
+One `schema_version` integer, repeated identically at the top of `homes.yaml`, `type-index.json`, `profile.yaml`, and any sidecar file. A version bump is atomic across all of them — even a change to only the sidecar schema bumps the shared number. This trades a slightly higher bump frequency for a stronger guarantee: mixed-version artifacts from an upgraded and a not-yet-upgraded run of the Structurer are detectable by a single field comparison, not a per-file compatibility matrix.
+
+---
+
+*Source: `CONCEPT-full-architecture.md §5` (WP-483 Ф2). Solo-authored 2026-07-14 after the intended peer-review session failed at the infrastructure level (Kimi adapter returned empty output twice, unrelated to this content). An independent cold-context review found and fixed two contradictions with the source concept (quarantine wrongly encoded as a `type` value instead of out-of-axis; an internal contradiction on whether freshness is mandatory). Four items remain flagged in-text as this document's own proposal, not a confirmed convention: `homes.yaml` glob-specificity precedence, the quarantine `reason` enum + field names, and the `ttl_days` field name.*

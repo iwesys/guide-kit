@@ -88,8 +88,9 @@ STAGE_NARRATIVE: dict[int, tuple[str, str]] = {
 # CAT.002 catalog: leisure practices x area x entry_stage
 # element_id → {area, entry_stage, name}
 # name: the Russian name from the card's frontmatter (DS-principles-curriculum/.../CAT.002/).
-# The name is hardcoded into this dict because the catalog repo is absent on tsekh-1, and
-# the prompt needs the Russian name instead of a bare code (WP-149, "red night" 2026-07-11, G5-inline-code).
+# The name is hardcoded into this dict because the catalog repo isn't guaranteed to be
+# present at runtime, and the prompt needs the Russian name instead of a bare code
+# (a bare code leaking into generated text is a known failure mode — see element_name() below).
 CAT002_ELEMENTS = {
     "CAT.002.A1": {"area": 5, "entry_stage": 1, "name": "Сон и распорядок дня"},
     "CAT.002.A2": {"area": 5, "entry_stage": 1, "name": "Отдых между помидорками"},
@@ -202,9 +203,9 @@ def _get_cat001() -> dict[str, dict]:
 def element_name(element_id: str) -> str:
     """The catalog element's Russian name for the prompt text, "" if unknown.
 
-    WP-149 ("red night" 2026-07-11): the bare element code (CAT.003.METHOD.003)
-    was being injected into the prompt and leaking into the lesson text — G5-inline-code.
-    The generator substitutes the name for the code; the code stays only in decision_log.
+    A bare element code (e.g. "CAT.003.METHOD.003") leaking into the prompt and
+    then into the generated lesson text is a known failure mode. The generator
+    substitutes the name for the code; the code stays only in decision_log.
     """
     for catalog in (CAT003_ELEMENTS, CAT002_ELEMENTS, _get_cat001()):
         entry = catalog.get(element_id)

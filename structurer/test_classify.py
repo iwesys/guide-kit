@@ -136,6 +136,12 @@ def test_event_date_from_filename():
     assert detect_event_date("daily-notes/2026-06-01.md", {}) is True
 
 
+def test_date_in_directory_name_is_not_a_signal():
+    # A folder named after a date (e.g. an archived project kickoff) must not tag
+    # every file inside it as an event — only the filename itself counts.
+    assert detect_event_date("archive/2026-06-01-project-kickoff/notes.md", {}) is False
+
+
 def test_invalid_filename_date_is_not_a_signal():
     assert detect_event_date("weird/1234-99-99.md", {}) is False
 

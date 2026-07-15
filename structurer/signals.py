@@ -78,11 +78,17 @@ def read_frontmatter_override(frontmatter: dict, abs_path: str) -> str | None:
 def detect_event_date(rel_path: str, frontmatter: dict) -> bool:
     """`event_date:` frontmatter key, or a filename containing YYYY-MM-DD (the
     daily-note convention) — both validated as real calendar dates, not regex shape
-    alone."""
+    alone.
+
+    Matches against the filename only, not the full rel_path — a directory segment
+    that happens to contain a date (e.g. "archive/2026-06-01-kickoff/notes.md") is
+    not itself a daily-note filename, and matching the whole path would tag every
+    file under such a folder as an event, not just the ones that actually are."""
     event_date = frontmatter.get("event_date")
     if event_date is not None and _is_real_date(str(event_date)):
         return True
-    match = _FILENAME_DATE_RE.search(rel_path)
+    filename = rel_path.rsplit("/", 1)[-1]
+    match = _FILENAME_DATE_RE.search(filename)
     return bool(match and _is_real_date(match.group(1)))
 
 

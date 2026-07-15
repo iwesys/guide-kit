@@ -2,7 +2,7 @@
 
 Two open, local-first tools that turn your own notes into a personal development guide — using your own AI assistant, on your own machine.
 
-**Status:** generator core works end-to-end locally (deterministic planner + adapter + hard-fail policy — see Roadmap below). Structurer and the two invitation steps are not built yet.
+**Status:** generator core and structurer both work end-to-end locally (deterministic planner + adapter + hard-fail policy; folder- and per-file classification with mandatory quarantine, freshness, sidecar overrides, pluggable media extractors — see Roadmap below). The two invitation steps are not built yet.
 
 ## What it does
 
@@ -40,7 +40,7 @@ No `profile.yaml`? That's a valid cold start — you get a generic first plan in
 Core logic is being extracted from a working internal prototype in stages:
 
 1. ✅ Generator core (deterministic planner + thin LLM adapter, no cloud dependencies)
-2. Structurer (folder-based + per-file classification, mandatory quarantine)
+2. ✅ Structurer (folder-based + per-file classification, mandatory quarantine)
 3. Two optional invitation steps (connect to a hosted service; adopt the full toolkit) — entirely opt-in, never required
 4. Portability tests: your data must be exportable in under an hour, runnable on a new machine in under a day, and speak only open protocols (no vendor-locked APIs)
 

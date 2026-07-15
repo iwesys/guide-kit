@@ -32,6 +32,7 @@ from horizons import (
     RCSProfile,
     WeekHypothesis,
 )
+from onboarding_ctas import render_onboarding_ctas
 from planner import plan_horizon
 from llm_backends import GenerationContext, PromptSpec, generate as llm_generate
 
@@ -217,13 +218,18 @@ def apply_hard_fail_gate(decision_log: list[dict], policy: dict) -> tuple[bool, 
 # Markdown rendering
 # ---------------------------------------------------------------------------
 
-def render_markdown(narrative: str, plan_day: list[dict], decision_log: list[dict]) -> str:
+def render_markdown(narrative: str, plan_day: list[dict], decision_log: list[dict], onboarding_appendix: str = "") -> str:
+    """onboarding_appendix (WP-483 Phase 3) sits after the visible content and before
+    the decision_log comment — it carries no provenance and is outside the hard-fail
+    gate, so it does not belong inside decision_log itself."""
     lines = ["# План на сегодня", "", narrative, "", "## Задания"]
     for item in plan_day:
         label = item.get("label") or item.get("element_id") or "?"
         tomatoes = item.get("tomatoes", 1)
         rationale = item.get("rationale", "")
         lines.append(f"- **{label}** ({tomatoes} помидорок) — {rationale}")
+    if onboarding_appendix:
+        lines += ["", onboarding_appendix]
     lines += ["", "<!-- decision_log:", json.dumps(decision_log, ensure_ascii=False, indent=2), "-->"]
     return "\n".join(lines)
 
@@ -335,7 +341,8 @@ def generate_daily_plan(
             },
         )
 
-    markdown = render_markdown(narrative, plan_day, decision_log)
+    onboarding_appendix = render_onboarding_ctas(config)
+    markdown = render_markdown(narrative, plan_day, decision_log, onboarding_appendix)
     return GuideResult(ok=True, markdown=markdown)
 
 

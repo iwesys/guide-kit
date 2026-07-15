@@ -28,3 +28,14 @@ llm_model: null
 # a leftover cloud-provider key would be sent to whatever llm_base_url points
 # at, which matters if that URL is ever wrong (typo, stale tunnel).
 llm_api_key: null
+
+# Append the two optional invitation blocks (connect to the hosted platform;
+# adopt the full IWE template) at the end of the generated guide. Default true
+# — guide-kit is also meant to be a soft entry point into the platform; turn
+# this off if you never want to see them.
+onboarding_ctas: true
+
+# Canonical link for the platform invitation block. Not set (empty string) →
+# the block still renders, just without a link line — guide-kit does not
+# invent this URL on its own.
+platform_connect_url: ""

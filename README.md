@@ -2,7 +2,7 @@
 
 Two open, local-first tools that turn your own notes into a personal development guide — using your own AI assistant, on your own machine.
 
-**Status:** generator core and structurer both work end-to-end locally (deterministic planner + adapter + hard-fail policy; folder- and per-file classification with mandatory quarantine, freshness, sidecar overrides, pluggable media extractors — see Roadmap below). The two invitation steps are not built yet.
+**Status:** generator core and structurer both work end-to-end locally (deterministic planner + adapter + hard-fail policy; folder- and per-file classification with mandatory quarantine, freshness, sidecar overrides, pluggable media extractors — see Roadmap below). The two optional invitation steps are also built (see below).
 
 ## What it does
 
@@ -39,13 +39,28 @@ python3 adapter.py --profile profile.yaml --config ../guide-kit.config.yaml
 
 No `profile.yaml`? That's a valid cold start — you get a generic first plan instead of an error. No `curriculum_path` configured? The planner picks a generic practice on its own and marks it `llm-assisted` in the decision log instead of failing or inventing a source. A required fact with no source at all — not even an LLM attempt — produces a diagnostic YAML explaining what's missing, never a silently empty or made-up guide.
 
+## Optional next steps
+
+The generated guide can end with two short invitation blocks — pure text, no
+account, no code in guide-kit that decides anything on your behalf. guide-kit
+never tracks or drives your onboarding state: whichever platform you connect
+to is always asked for its own next step, and its answer is shown to you
+as-is. Turn both off with `onboarding_ctas: false` in your config.
+
+- **Connect to the hosted platform** — a pointer telling your AI agent to
+  ask the platform's own MCP server what to do next. `platform_connect_url`
+  is empty by default (guide-kit does not invent this link); set it once the
+  canonical one exists.
+- **Adopt the full IWE template** — a pointer to `setup.sh` for users whose
+  AI agent is Claude Code.
+
 ## Roadmap
 
 Core logic is being extracted from a working internal prototype in stages:
 
 1. ✅ Generator core (deterministic planner + thin LLM adapter, no cloud dependencies)
 2. ✅ Structurer (folder-based + per-file classification, mandatory quarantine)
-3. Two optional invitation steps (connect to a hosted service; adopt the full toolkit) — entirely opt-in, never required
+3. ✅ Two optional invitation steps (connect to a hosted service; adopt the full toolkit) — entirely opt-in, never required
 4. Portability tests: your data must be exportable in under an hour, runnable on a new machine in under a day, and speak only open protocols (no vendor-locked APIs)
 
 ## License

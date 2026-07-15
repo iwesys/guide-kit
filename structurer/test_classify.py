@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 
 from classify import classify_file, main, walk_and_classify, write_type_index
+from extractors import ExtractorRule
 from homes import HomeRule, load_homes, match_home
 from signals import detect_event_date, read_frontmatter, read_frontmatter_override
 
@@ -214,16 +215,53 @@ def test_non_text_file_is_pending_not_skipped(tmp_path):
     assert entry == {"type": None, "pending": "needs-extractor"}
 
 
-def test_non_text_file_under_homes_rule_gets_type_but_stays_pending(tmp_path):
-    # FORMAT.md §4's own whiteboard.png example: homes.yaml can categorize a binary
-    # file by folder even with no extractor installed — it assigns a type, it doesn't
-    # manufacture text content that isn't there.
+def test_non_text_file_under_homes_rule_stays_null_type_but_notes_the_category(tmp_path):
+    # FORMAT.md §4's own whiteboard.png example: homes.yaml's category is surfaced
+    # as a note, but "type" stays null while "pending" is present (field reference:
+    # "type ... null whenever quarantine is present ... or when pending is present") —
+    # homes.yaml doesn't manufacture text content that isn't there (cold-review
+    # finding, 2026-07-15: an earlier version put the homes type directly into
+    # "type" here, contradicting this spec table and skipping the residency check).
     (tmp_path / "photos").mkdir()
     f = tmp_path / "photos" / "whiteboard.png"
     f.write_bytes(b"\x89PNG\r\n")
     homes = [HomeRule("photos/**", "2.3")]
     entry = classify_file("photos/whiteboard.png", str(f), homes)
-    assert entry == {"type": "2.3", "pending": "needs-extractor", "source": "homes"}
+    assert entry == {"type": None, "pending": "needs-extractor", "note": "placement-only (2.3) if an extractor is added"}
+
+
+def test_transcript_branch_carries_freshness(tmp_path):
+    # Cold-review finding, 2026-07-15: freshness was computed for plain-text
+    # files but never for a transcript's own frontmatter, even though it's a
+    # real markdown file that can carry valid_from/superseded_by like any other.
+    audio = tmp_path / "standup.m4a"
+    audio.write_text("hello from the meeting")
+    rule = ExtractorRule(frozenset({".m4a"}), "cat", output="text")
+    entry = classify_file("standup.m4a", str(audio), [], extractor_rules=[rule], base_dir=str(tmp_path))
+    assert entry["source"] == "classifier-on-transcript"
+    # `cat`'s stdout has no frontmatter, so no freshness block is expected here —
+    # this asserts the transcript path doesn't crash while wiring build_freshness
+    # in; the field's presence is exercised end-to-end in test_media.py's
+    # write_transcript coverage of the frontmatter shape build_freshness reads.
+    assert "freshness" not in entry
+
+
+def test_residency_denial_blocks_classified_type(tmp_path):
+    note = tmp_path / "note.md"
+    note.write_text("just a note")
+    residency_state = {"2.4_inbound_structurer": "denied"}
+    entry = classify_file("note.md", str(note), [], residency_state=residency_state)
+    assert entry == {"type": None, "pending": "needs-consent"}
+
+
+def test_homes_pending_branch_type_stays_null_regardless_of_residency():
+    # Residency is a no-op when type is already null (nothing to gate), but the
+    # call must not raise for this branch either.
+    entry = classify_file(
+        "photos/whiteboard.png", "/nonexistent/photos/whiteboard.png",
+        [HomeRule("photos/**", "2.3")], residency_state={"2.3_inbound_structurer": "denied"},
+    )
+    assert entry == {"type": None, "pending": "needs-extractor", "note": "placement-only (2.3) if an extractor is added"}
 
 
 def test_walk_skips_structurer_output_dir(tmp_path):

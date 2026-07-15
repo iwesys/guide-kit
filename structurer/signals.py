@@ -57,6 +57,23 @@ def read_frontmatter(abs_path: str) -> dict:
     return loaded
 
 
+def read_bool_field(mapping: dict, key: str, context_for_log: str) -> bool | None:
+    """YAML parses an unquoted `true`/`false` as a real bool, but a quoted
+    `"true"`/`"false"` — a plausible habit, since every `type:` example in
+    FORMAT.md is itself quoted — parses as a string that `is True`/`is False`
+    silently fails to match (cold-review finding, 2026-07-15, originally found
+    in quarantine's `speakers_third_party` handling; shared here because §5's
+    sidecar file needs the identical parse for the same field name)."""
+    value = mapping.get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+        return value.strip().lower() == "true"
+    if value is not None:
+        logger.warning("field %r=%r in %r is not a recognized boolean — ignoring", key, value, context_for_log)
+    return None
+
+
 def read_frontmatter_override(frontmatter: dict, abs_path: str) -> str | None:
     """Explicit `type:`/`user_intent:` outranks every other signal. An unrecognized
     value falls through instead of failing the run — FORMAT.md's 2.4 default is the

@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 import re
 
+from signals import read_bool_field
+
 logger = logging.getLogger(__name__)
 
 QUARANTINE_REASONS = frozenset({"pii", "secret", "payment", "third-party-pii"})
@@ -101,24 +103,6 @@ def _detect_payment(text: str) -> str | None:
     return None
 
 
-def _frontmatter_bool(frontmatter: dict, key: str, rel_path: str) -> bool | None:
-    """YAML parses an unquoted `speakers_third_party: true` as a real bool, but a
-    quoted `"true"`/`"false"` — a plausible habit, since every `type:` example in
-    FORMAT.md is itself quoted — parses as a string that `is True`/`is False` silently
-    fails to match (cold-review finding, 2026-07-15: a quoted forced flag was
-    reachable in YAML but never triggered quarantine — the exact failure mode this
-    module exists to prevent). Same normalize-don't-fail-silently approach as
-    signals.read_frontmatter_override's `type:` handling."""
-    value = frontmatter.get(key)
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
-        return value.strip().lower() == "true"
-    if value is not None:
-        logger.warning("frontmatter %r=%r in %r is not a recognized boolean — ignoring", key, value, rel_path)
-    return None
-
-
 def detect_quarantine(text: str, rel_path: str, frontmatter: dict) -> dict | None:
     """One quarantine check, run before any type assignment (FORMAT.md §3: quarantine
     "takes priority over whatever type the step would otherwise have assigned" — so a
@@ -134,9 +118,9 @@ def detect_quarantine(text: str, rel_path: str, frontmatter: dict) -> dict | Non
     PII this module exists to catch. `pii`/`third-party-pii` heuristic detection is
     out of scope here (see module docstring) — reachable only via the forced flag.
     """
-    if _frontmatter_bool(frontmatter, "speakers_third_party", rel_path) is True:
+    if read_bool_field(frontmatter, "speakers_third_party", rel_path) is True:
         return {"reason": "third-party-pii", "excluded_from_generation": True, "detected_by": "forced-flag"}
-    if _frontmatter_bool(frontmatter, "quarantine", rel_path) is False:
+    if read_bool_field(frontmatter, "quarantine", rel_path) is False:
         return None
 
     detected_by = _detect_secret(text)

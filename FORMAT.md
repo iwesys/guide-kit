@@ -222,7 +222,9 @@ What the Structurer *does* provide toward this contract: `type-index.json` and `
 
 ## 9. Out of scope for this document
 
-**`residency.yaml`** is not specified here. It's an internal artifact under the DATA-RESIDENCY slots (guide-kit's storage layer already ships ResidencyGate code with its own schema for that file) — not a public contract a third party needs to hand-author. If you're only bringing your own data through the Structurer, you will never write this file by hand.
+**`residency.yaml`** is not specified here — the Structurer does not produce this file at all (revised 2026-07-15, peer-session). What it does instead: `structurer/residency.py` checks the Structurer's own permission to read a classified `data_type` (`function_id=structurer`, `flow_direction=inbound`) against an optional local `.structurer/residency-state.yaml`, a portable, base-local store — not the author's personal exocortex `~/IWE/current/data-residency.yaml` (that path belongs to `FMT-exocortex-template`'s `ResidencyGate` skill and would break this kit's zero-server, runs-on-a-stranger's-machine invariant if imported directly). A missing state file means every `data_type` is allowed — same cold-start posture as a missing `profile.yaml`.
+
+**Provenance invariant.** Whether a file is `2.1-declared` vs `2.1-derived` (self-declared vs a mirror of some stream) is decided only by declaration — `homes.yaml`, a sidecar, or frontmatter — never inferred from content. The residency check above answers "may the Structurer read this data_type", not "where did this file actually come from" — that question belongs to whatever imported the file (a sync job, a manual export), each with its own consent check at pull time, out of scope for the Structurer.
 
 ---
 

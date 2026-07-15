@@ -1,9 +1,9 @@
 """
-classify.py — guide-kit structurer: orchestrates homes.yaml + structural signals into
-type-index.json (FORMAT.md §2-§4). Deterministic slice only: quarantine → homes.yaml →
-frontmatter override → event-date signal → honest 2.4 default. Media preprocessing,
-sidecar overrides, and the LLM fallback are separate slices (WP-483 Ф2 checklist), not
-implemented here.
+classify.py — guide-kit structurer: orchestrates media preprocessing, homes.yaml,
+structural signals, freshness, and the Structurer's own residency check into
+type-index.json (FORMAT.md §1-§7). Pipeline order (FORMAT.md, top): media
+preprocessing → quarantine → homes.yaml → per-file classifier → freshness.
+The LLM fallback (§3 step 4) is a separate slice, not implemented here.
 
 CLI:
     python3 classify.py --base <path> [--homes homes.yaml] [--out .structurer/type-index.json]
@@ -15,8 +15,12 @@ import json
 import logging
 import os
 
+from extractors import load_extractors
+from freshness import build_freshness
 from homes import HomeRule, load_homes, match_home
+from media import preprocess_media
 from quarantine import detect_quarantine
+from residency import check_access, load_residency_state
 from signals import EVENT_DATE_CONFIDENCE, detect_event_date, read_frontmatter, read_frontmatter_override
 
 logger = logging.getLogger(__name__)
@@ -49,56 +53,120 @@ def read_text_body(abs_path: str) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def classify_file(rel_path: str, abs_path: str, homes: list[HomeRule]) -> dict:
+def _classify_by_signals(rel_path: str, frontmatter: dict, homes: list[HomeRule]) -> tuple[str, float, str]:
+    """The homes.yaml → frontmatter-override → event-date → default 2.4
+    precedence (FORMAT.md §3 steps 2-3, 5), shared between a normal text file
+    and a transcript standing in for its non-text original — the transcript
+    still gets typed by the same rules, just against `rel_path` (for
+    homes.yaml) and the transcript's own frontmatter (for the rest)."""
+    home = match_home(rel_path, homes)
+    home_type = home.type if home is not None and home.type != "auto" else None
+    if home_type is not None:
+        return home_type, 1.0, "homes"
+
+    override = read_frontmatter_override(frontmatter, rel_path)
+    if override is not None:
+        return override, 1.0, "frontmatter"
+
+    if detect_event_date(rel_path, frontmatter):
+        return "2.2", EVENT_DATE_CONFIDENCE, "classifier"
+
+    return "2.4", 0.0, "default"
+
+
+def _apply_residency(entry: dict, residency_state: dict) -> dict:
+    """Every entry that got a real type (not quarantined, not already
+    pending) passes through the Structurer's own access check
+    (function_id=structurer, flow_direction=inbound — residency.py) before
+    being accepted as classified. This checks the Structurer's own permission
+    to read this data_type, not the file's origin (see residency.py
+    docstring) — an origin question is out of scope here."""
+    if entry.get("type") is None:
+        return entry
+    if not check_access(residency_state, entry["type"]):
+        return {"type": None, "pending": "needs-consent"}
+    return entry
+
+
+def classify_file(
+    rel_path: str,
+    abs_path: str,
+    homes: list[HomeRule],
+    extractor_rules: list | None = None,
+    base_dir: str | None = None,
+    residency_state: dict | None = None,
+) -> dict:
     """One type-index.json entry, per FORMAT.md §3 precedence, quarantine (§4a) run
     first for text files: quarantine → homes.yaml (non-"auto") → frontmatter override
-    → event-date signal → default 2.4. Non-text files skip quarantine — there's no
-    extracted text yet (media preprocessing is a separate, not-yet-implemented slice;
-    §1 rule 4 requires quarantine to run on transcripts once that slice lands).
+    → event-date signal → default 2.4, then freshness (§7) and the residency check.
+
+    Non-text files go through the media cascade (§1) first — sidecar override,
+    then a configured extractor producing a transcript that's classified the
+    same way as any text file. `extractor_rules`/`base_dir` are optional so
+    existing text-only callers (and tests) don't have to supply them; passing
+    neither disables the media cascade, matching the pre-Ф2-media behavior.
 
     Quarantine runs before homes.yaml, not after: §3 says quarantine "takes priority
     over whatever type the step would otherwise have assigned" — checking after a type
-    is already decided would mean undoing that decision instead of skipping it. The
-    cost: every text file's content is now read, even ones homes.yaml would have typed
-    without reading them (peer-session finding, 2026-07-15 — see test_quarantine.py's
-    homes-precedence regression case).
-
-    homes.yaml is consulted for EVERY non-quarantined file, text or not (FORMAT.md §4's
-    own whiteboard.png example: "placement-only if homes.yaml covers this path" — a user
-    can categorize a photo by folder even with no OCR extractor installed). A non-text
-    file with no homes.yaml coverage is honestly "pending", not silently dropped;
-    one WITH coverage still gets "pending" too — homes.yaml assigns a category, it
-    doesn't manufacture readable content that isn't there."""
+    is already decided would mean undoing that decision instead of skipping it."""
+    residency_state = residency_state if residency_state is not None else {}
     ext = os.path.splitext(rel_path)[1].lower()
 
     if ext not in TEXT_EXTENSIONS:
+        if extractor_rules is not None and base_dir is not None:
+            media_result = preprocess_media(base_dir, rel_path, abs_path, extractor_rules)
+            if media_result is not None and "final" in media_result:
+                return _apply_residency(media_result["final"], residency_state)
+            if media_result is not None and "transcript_path" in media_result:
+                transcript_path = media_result["transcript_path"]
+                transcript_frontmatter = read_frontmatter(transcript_path)
+                transcript_text = read_text_body(transcript_path)
+                # FORMAT.md §1 rule 4: quarantine heuristics run on transcripts too.
+                quarantine = detect_quarantine(transcript_text, rel_path, transcript_frontmatter)
+                if quarantine is not None:
+                    return {"type": None, "quarantine": quarantine}
+                file_type, confidence, _source = _classify_by_signals(rel_path, transcript_frontmatter, homes)
+                entry = {
+                    "type": file_type, "mode": "pointer", "confidence": confidence,
+                    "source": "classifier-on-transcript", "media": media_result["media"],
+                }
+                freshness = build_freshness(transcript_frontmatter, rel_path)
+                if freshness is not None:
+                    entry["freshness"] = freshness
+                return _apply_residency(entry, residency_state)
+
+        # FORMAT.md §4 field reference: type is null whenever pending is present —
+        # homes.yaml assigns a category but doesn't manufacture readable content
+        # that isn't there (cold-review finding, 2026-07-15: an earlier version
+        # put home_type directly in "type" here, contradicting the spec's own
+        # whiteboard.png example and skipping _apply_residency below).
         home = match_home(rel_path, homes)
         home_type = home.type if home is not None and home.type != "auto" else None
         if home_type is not None:
-            return {"type": home_type, "pending": "needs-extractor", "source": "homes"}
-        return {"type": None, "pending": "needs-extractor"}
+            entry = {"type": None, "pending": "needs-extractor", "note": f"placement-only ({home_type}) if an extractor is added"}
+        else:
+            entry = {"type": None, "pending": "needs-extractor"}
+        return _apply_residency(entry, residency_state)
 
     frontmatter = read_frontmatter(abs_path)
     quarantine = detect_quarantine(read_text_body(abs_path), rel_path, frontmatter)
     if quarantine is not None:
         return {"type": None, "quarantine": quarantine}
 
-    home = match_home(rel_path, homes)
-    home_type = home.type if home is not None and home.type != "auto" else None
-    if home_type is not None:
-        return {"type": home_type, "mode": "index", "confidence": 1.0, "source": "homes"}
-
-    override = read_frontmatter_override(frontmatter, abs_path)
-    if override is not None:
-        return {"type": override, "mode": "index", "confidence": 1.0, "source": "frontmatter"}
-
-    if detect_event_date(rel_path, frontmatter):
-        return {"type": "2.2", "mode": "index", "confidence": EVENT_DATE_CONFIDENCE, "source": "classifier"}
-
-    return {"type": "2.4", "mode": "index", "confidence": 0.0, "source": "default"}
+    file_type, confidence, source = _classify_by_signals(rel_path, frontmatter, homes)
+    entry = {"type": file_type, "mode": "index", "confidence": confidence, "source": source}
+    freshness = build_freshness(frontmatter, rel_path)
+    if freshness is not None:
+        entry["freshness"] = freshness
+    return _apply_residency(entry, residency_state)
 
 
-def walk_and_classify(base_dir: str, homes: list[HomeRule]) -> dict[str, dict]:
+def walk_and_classify(
+    base_dir: str,
+    homes: list[HomeRule],
+    extractor_rules: list | None = None,
+    residency_state: dict | None = None,
+) -> dict[str, dict]:
     """Walks base_dir, skipping dotfiles/dotdirs and .structurer/.git (a repeat run
     must not classify its own output). Returns the "files" section of type-index.json."""
     files: dict[str, dict] = {}
@@ -114,7 +182,7 @@ def walk_and_classify(base_dir: str, homes: list[HomeRule]) -> dict[str, dict]:
                 continue
             abs_path = os.path.join(root, filename)
             rel_path = os.path.relpath(abs_path, base_dir).replace(os.sep, "/")
-            files[rel_path] = classify_file(rel_path, abs_path, homes)
+            files[rel_path] = classify_file(rel_path, abs_path, homes, extractor_rules, base_dir, residency_state)
     return files
 
 
@@ -152,6 +220,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="guide-kit structurer: classify a note base into type-index.json")
     parser.add_argument("--base", required=True, help="path to the user's note base")
     parser.add_argument("--homes", default="homes.yaml", help="relative to --base unless absolute; tolerant of absence")
+    parser.add_argument("--extractors", default="extractors.yaml", help="relative to --base unless absolute; tolerant of absence")
     parser.add_argument("--out", default=".structurer/type-index.json", help="relative to --base unless absolute")
     parser.add_argument("--quarantine-report", default=".structurer/quarantine-report.md", help="relative to --base unless absolute")
     args = parser.parse_args()
@@ -165,7 +234,10 @@ def main() -> None:
     # wrong rules). Same resolution pattern already used for --out below.
     homes_path = args.homes if os.path.isabs(args.homes) else os.path.join(args.base, args.homes)
     homes = load_homes(homes_path)
-    files = walk_and_classify(args.base, homes)
+    extractors_path = args.extractors if os.path.isabs(args.extractors) else os.path.join(args.base, args.extractors)
+    extractor_rules = load_extractors(extractors_path)
+    residency_state = load_residency_state(args.base)
+    files = walk_and_classify(args.base, homes, extractor_rules, residency_state)
     out_path = args.out if os.path.isabs(args.out) else os.path.join(args.base, args.out)
     write_type_index(files, out_path)
     report_path = args.quarantine_report if os.path.isabs(args.quarantine_report) else os.path.join(args.base, args.quarantine_report)

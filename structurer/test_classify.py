@@ -142,6 +142,13 @@ def test_date_in_directory_name_is_not_a_signal():
     assert detect_event_date("archive/2026-06-01-project-kickoff/notes.md", {}) is False
 
 
+def test_real_date_after_invalid_date_shaped_prefix_is_still_found():
+    # A template/export filename can have a placeholder "1234-99-99" prefix followed
+    # by a real date — the first regex match being calendar-invalid must not stop the
+    # search for a later, real one.
+    assert detect_event_date("notes/1234-99-99-2026-06-01-standup.md", {}) is True
+
+
 def test_invalid_filename_date_is_not_a_signal():
     assert detect_event_date("weird/1234-99-99.md", {}) is False
 

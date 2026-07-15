@@ -17,6 +17,10 @@ Everything runs locally. Your notes never leave your machine except through an e
 
 Most personal-knowledge tools either lock you into their own AI, or lock your data into their own cloud. guide-kit does neither: the code is open, the method is documented, and nothing about it requires an account anywhere.
 
+## Relationship to IWE
+
+guide-kit is the standalone form of the same guide engine that runs [IWE](https://github.com/iwesys/IWE) (a personal work environment built on top of Claude Code) and the hosted Aisystant platform — one engine, three ways to get it: use guide-kit on its own, get it bundled inside the IWE template, or use it hosted on the platform. Connecting to either of those is entirely opt-in (see Roadmap) — guide-kit works fully standalone with no account anywhere.
+
 ## Structure
 
 ```
@@ -46,4 +50,4 @@ Core logic is being extracted from a working internal prototype in stages:
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Provisional; confirm before any public release.
+MIT — see [LICENSE](LICENSE).

@@ -1,4 +1,4 @@
-"""Local LLM backend (guide-kit, WP-483 Ф1).
+"""Local LLM backend (guide-kit, WP-483 Phase 1).
 
 Not a separate protocol: an abstract interface over "some OpenAI-compatible
 server on localhost" — MLX server (see the /local-llm skill), llama.cpp
@@ -20,7 +20,7 @@ def generate(prompt_spec: PromptSpec, context: GenerationContext) -> GenerationR
     local_context = GenerationContext(
         backend="local",
         base_url=context.base_url or DEFAULT_LOCAL_BASE_URL,
-        api_key=context.api_key,  # большинство локальных серверов ключ игнорируют, но не запрещаем
+        api_key=context.api_key,  # most local servers ignore the key, but we don't forbid it
         model=context.model or DEFAULT_LOCAL_MODEL,
         timeout_s=context.timeout_s,
     )

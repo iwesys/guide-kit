@@ -104,7 +104,7 @@ def classify_file(
     then a configured extractor producing a transcript that's classified the
     same way as any text file. `extractor_rules`/`base_dir` are optional so
     existing text-only callers (and tests) don't have to supply them; passing
-    neither disables the media cascade, matching the pre-Ф2-media behavior.
+    neither disables the media cascade, matching the pre-Phase-2-media behavior.
 
     Quarantine runs before homes.yaml, not after: §3 says quarantine "takes priority
     over whatever type the step would otherwise have assigned" — checking after a type

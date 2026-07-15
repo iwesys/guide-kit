@@ -1,13 +1,13 @@
 """
-Портной (R27) — детерминированный планировщик.
-SOP MIM.SOP.001 шаги 1–4: выбор области, типа воздействия, элемента, глубины.
+Tailor (R27) — deterministic planner.
+SOP MIM.SOP.001 steps 1-4: choose area, impact type, element, depth.
 
-Входной контракт: PD.SPEC.001
-Выходной контракт: LessonPlan — передаётся в prompt.md (шаги 5–6)
+Input contract: PD.SPEC.001
+Output contract: LessonPlan — passed to prompt.md (steps 5-6)
 
-guide-kit fork (WP-483 Ф1): портативная копия agents/tailor/planner.py.
-Логика выбора не менялась — вырезаны только platform-specific импорт логирования
-и хардкод пути к DS-principles-curriculum (см. GUIDE_KIT_CURRICULUM_PATH ниже).
+guide-kit fork (WP-483 Phase 1): a portable copy of agents/tailor/planner.py.
+Selection logic is unchanged — only the platform-specific logging import and the
+hardcoded path to DS-principles-curriculum were cut (see GUIDE_KIT_CURRICULUM_PATH below).
 """
 
 from __future__ import annotations
@@ -26,15 +26,15 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from horizons import HorizonContext
 
-# SLOT_LABELS импортируется лениво в plan_horizon() чтобы не создавать
-# circular import при загрузке planner без horizons (legacy путь)
+# SLOT_LABELS is imported lazily inside plan_horizon() to avoid a
+# circular import when planner is loaded without horizons (legacy path)
 try:
     from horizons import SLOT_LABELS
 except ImportError:
     SLOT_LABELS: dict[str, str] = {}
 
 # ---------------------------------------------------------------------------
-# Типы входных данных (PD.SPEC.001)
+# Input data types (PD.SPEC.001)
 # ---------------------------------------------------------------------------
 
 ImpactType = Literal["worldview", "mastery"]
@@ -58,7 +58,7 @@ ROLE_AREA_BOOSTS: dict[str, tuple[int, int]] = {
     "enlightener":   (4, 1),
 }
 
-# Матрица весов: фаза (1-4) × область (1-5) — из SOP.001 § Матрица
+# Weight matrix: phase (1-4) x area (1-5) — from SOP.001 § Matrix
 PHASE_WEIGHTS: dict[int, list[float]] = {
     1: [1.5, 0.5, 0.8, 0.7, 1.0],
     2: [1.0, 1.0, 0.8, 0.8, 1.0],
@@ -66,7 +66,7 @@ PHASE_WEIGHTS: dict[int, list[float]] = {
     4: [0.8, 1.8, 0.5, 0.8, 1.4],
 }
 
-# impact_type базовое соотношение: ступень → вероятность worldview
+# impact_type base ratio: stage → probability of worldview
 STAGE_WORLDVIEW_PROB: dict[int, float] = {
     1: 0.80,
     2: 0.80,
@@ -75,21 +75,21 @@ STAGE_WORLDVIEW_PROB: dict[int, float] = {
     5: 0.20,
 }
 
-# Нарративная дуга: ступень (0-4 в коде = 1-5 в Pack) → (narrative_phase, worldview_arc)
-# Source-of-truth: PD.FORM.080 §3 + PD.FORM.087 §5. WP-245 Ф6
+# Narrative arc: stage (0-4 in code = 1-5 in the Pack) → (narrative_phase, worldview_arc)
+# Source-of-truth: PD.FORM.080 §3 + PD.FORM.087 §5. WP-245 Phase 6
 STAGE_NARRATIVE: dict[int, tuple[str, str]] = {
-    1: ("Я могу меняться", "Я могу меняться"),                          # ст.1 Случайный
-    2: ("Я — система", "Я — система"),                                  # ст.2 Практикующий
-    3: ("Окружение влияет на меня", "Окружение влияет на меня"),         # ст.3 Систематический
-    4: ("Мир — система", "Мир — система, и я в ней деятель"),            # ст.4 Дисциплинированный
-    5: ("Мы меняем мир", "Системное мировоззрение, agency"),             # ст.5 Проактивный
+    1: ("Я могу меняться", "Я могу меняться"),                          # stage 1, Random
+    2: ("Я — система", "Я — система"),                                  # stage 2, Practicing
+    3: ("Окружение влияет на меня", "Окружение влияет на меня"),         # stage 3, Systematic
+    4: ("Мир — система", "Мир — система, и я в ней деятель"),            # stage 4, Disciplined
+    5: ("Мы меняем мир", "Системное мировоззрение, agency"),             # stage 5, Proactive
 }
 
-# Каталог CAT.002: практики досуга × область (area) × entry_stage
+# CAT.002 catalog: leisure practices x area x entry_stage
 # element_id → {area, entry_stage, name}
-# name: русское имя из frontmatter карточки (DS-principles-curriculum/.../CAT.002/).
-# Имя зашито в словарь, потому что на tsekh-1 репо каталогов отсутствует, а промпту
-# нужно русское имя вместо голого кода (WP-149, красная ночь 2026-07-11, G5-inline-code).
+# name: the Russian name from the card's frontmatter (DS-principles-curriculum/.../CAT.002/).
+# The name is hardcoded into this dict because the catalog repo is absent on tsekh-1, and
+# the prompt needs the Russian name instead of a bare code (WP-149, "red night" 2026-07-11, G5-inline-code).
 CAT002_ELEMENTS = {
     "CAT.002.A1": {"area": 5, "entry_stage": 1, "name": "Сон и распорядок дня"},
     "CAT.002.A2": {"area": 5, "entry_stage": 1, "name": "Отдых между помидорками"},
@@ -103,11 +103,11 @@ CAT002_ELEMENTS = {
     "CAT.002.B4": {"area": 5, "entry_stage": 3, "name": "Фиксация впечатлений"},
 }
 
-# Каталог CAT.003: практики обучения × область × entry_stage
-# Источник: DS-principles-curriculum/data/curriculum/CAT.003/
+# CAT.003 catalog: learning practices x area x entry_stage
+# Source: DS-principles-curriculum/data/curriculum/CAT.003/
 # area: 1=knowledge, 2=tools, 3=constraints, 4=environment, 5=organism
-# entry_stage: минимальная ступень для доступа (1 = Случайный, доступно всем)
-# name: русское имя из frontmatter карточки (см. комментарий у CAT002_ELEMENTS)
+# entry_stage: minimum stage required for access (1 = Random, available to everyone)
+# name: the Russian name from the card's frontmatter (see the comment above CAT002_ELEMENTS)
 CAT003_ELEMENTS: dict[str, dict] = {
     "CAT.003.METHOD.001": {"area": 2, "entry_stage": 1, "name": "Инвестирование и учёт времени"},
     "CAT.003.METHOD.003": {"area": 1, "entry_stage": 1, "name": "Систематическое медленное чтение"},
@@ -115,23 +115,23 @@ CAT003_ELEMENTS: dict[str, dict] = {
     "CAT.003.METHOD.005": {"area": 1, "entry_stage": 1, "name": "Мышление проговариванием"},
     "CAT.003.METHOD.006": {"area": 5, "entry_stage": 1, "name": "Организация досуга"},
     "CAT.003.METHOD.007": {"area": 4, "entry_stage": 1, "name": "Формирование окружения"},
-    "CAT.003.METHOD.008": {"area": 1, "entry_stage": 2, "name": "Стратегирование"},  # Практикующий+
+    "CAT.003.METHOD.008": {"area": 1, "entry_stage": 2, "name": "Стратегирование"},  # Practicing+
     "CAT.003.METHOD.009": {"area": 2, "entry_stage": 1, "name": "Планирование"},
 }
 
-# Каталог CAT.001: мировоззренческие мемы × область × entry_stage
-# Структура: element_id → {area, entry_stage, max_depth=3}
-# Источник (платформенный): DS-principles-curriculum/data/curriculum/CAT.001/
-# guide-kit: путь не хардкодится — задаётся через GUIDE_KIT_CURRICULUM_PATH
-# (guide-kit.config.yaml → curriculum_path). Не задан → честный пустой индекс,
-# prompt.md выбирает мировоззренческий элемент самостоятельно (см. _load_cat001).
-# Загружается из файловой системы при первом обращении (lazy load).
+# CAT.001 catalog: worldview memes x area x entry_stage
+# Structure: element_id → {area, entry_stage, max_depth=3}
+# Source (platform-side): DS-principles-curriculum/data/curriculum/CAT.001/
+# guide-kit: the path is not hardcoded — it's set via GUIDE_KIT_CURRICULUM_PATH
+# (guide-kit.config.yaml → curriculum_path). Not set → an honest empty index,
+# and prompt.md picks the worldview element on its own (see _load_cat001).
+# Loaded from the filesystem on first access (lazy load).
 
 _CAT001_CACHE: dict[str, dict] | None = None
 
 
 def _load_cat001() -> dict[str, dict]:
-    """Читает frontmatter из M-*.md файлов CAT.001, строит индекс."""
+    """Reads frontmatter from CAT.001's M-*.md files and builds an index."""
     global _CAT001_CACHE
     if _CAT001_CACHE is not None:
         return _CAT001_CACHE
@@ -140,8 +140,8 @@ def _load_cat001() -> dict[str, dict]:
     curriculum_path = os.environ.get("GUIDE_KIT_CURRICULUM_PATH", "")
 
     if not curriculum_path or not os.path.isdir(curriculum_path):
-        # Нет курикулы (портативный профиль без платформы) — честный пустой индекс,
-        # prompt.md fallback выбирает мировоззренческий элемент самостоятельно.
+        # No curriculum (a portable profile without the platform) — an honest empty index,
+        # prompt.md's fallback picks the worldview element on its own.
         _CAT001_CACHE = result
         return result
 
@@ -176,7 +176,7 @@ def _load_cat001() -> dict[str, dict]:
         except (KeyError, ValueError):
             continue
 
-        # context: 1=Саморазвитие, 2=Работа, 3=Досуг (FORM.082)
+        # context: 1=Self-development, 2=Work, 3=Leisure (FORM.082)
         context_str = fm.get("context", "")
         context_map = {"Саморазвитие": 1, "Работа": 2, "Досуг": 3}
         context_val = context_map.get(context_str, 0)
@@ -194,17 +194,17 @@ def _load_cat001() -> dict[str, dict]:
     return result
 
 
-# Lazy accessor — используется в _choose_element_worldview
+# Lazy accessor — used inside _choose_element_worldview
 def _get_cat001() -> dict[str, dict]:
     return _load_cat001()
 
 
 def element_name(element_id: str) -> str:
-    """Русское имя элемента каталога для текста промпта, "" если неизвестно.
+    """The catalog element's Russian name for the prompt text, "" if unknown.
 
-    WP-149 (красная ночь 2026-07-11): голый код элемента (CAT.003.METHOD.003)
-    инжектировался в промпт и просачивался в текст урока — G5-inline-code.
-    Генератор подставляет имя вместо кода; код остаётся только в decision_log.
+    WP-149 ("red night" 2026-07-11): the bare element code (CAT.003.METHOD.003)
+    was being injected into the prompt and leaking into the lesson text — G5-inline-code.
+    The generator substitutes the name for the code; the code stays only in decision_log.
     """
     for catalog in (CAT003_ELEMENTS, CAT002_ELEMENTS, _get_cat001()):
         entry = catalog.get(element_id)
@@ -214,14 +214,14 @@ def element_name(element_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Контекст FORM.082: вывод и подсказка
+# FORM.082 context: derivation and hint
 # ---------------------------------------------------------------------------
 
-# Маппинг каталог → контекст (для CAT.002/CAT.003 и fallback)
+# Catalog → context mapping (for CAT.002/CAT.003 and fallback)
 _CATALOG_CONTEXT: dict[str, int] = {
-    "CAT.002": 3,   # Досуг
-    "CAT.003": 1,   # Саморазвитие
-    "DP.M.008": 2,  # Работа
+    "CAT.002": 3,   # Leisure
+    "CAT.003": 1,   # Self-development
+    "DP.M.008": 2,  # Work
 }
 
 _CONTEXT_NAMES = {1: "Саморазвитие", 2: "Работа", 3: "Досуг"}
@@ -234,16 +234,16 @@ _CONTEXT_HINTS = {
 
 
 def _derive_context(element_id: str | None) -> int:
-    """Вывести контекст из element_id (FORM.008 §3).
+    """Derive the context from element_id (FORM.008 §3).
 
-    CAT.001 → из frontmatter (поле context в кэше).
-    CAT.002 → 3 (Досуг). CAT.003 → 1 (Саморазвитие). DP.M.008 → 2 (Работа).
-    Fallback → 1 (Саморазвитие).
+    CAT.001 → from frontmatter (the context field in the cache).
+    CAT.002 → 3 (Leisure). CAT.003 → 1 (Self-development). DP.M.008 → 2 (Work).
+    Fallback → 1 (Self-development).
     """
     if not element_id:
         return 1
 
-    # CAT.001 — из кэша frontmatter
+    # CAT.001 — from the frontmatter cache
     if element_id.startswith("CAT.001"):
         cat001 = _get_cat001()
         meta = cat001.get(element_id)
@@ -251,7 +251,7 @@ def _derive_context(element_id: str | None) -> int:
             return meta["context"]
         return 1  # fallback
 
-    # Другие каталоги — по префиксу
+    # Other catalogs — by prefix
     for prefix, ctx in _CATALOG_CONTEXT.items():
         if element_id.startswith(prefix):
             return ctx
@@ -260,11 +260,11 @@ def _derive_context(element_id: str | None) -> int:
 
 
 def _build_context_hint(context: int, student_stage: int) -> str:
-    """Подсказка когда/где выполнять задание (FORM.008 §3)."""
+    """Hint on when/where to complete the assignment (FORM.008 §3)."""
     return _CONTEXT_HINTS.get(context, _CONTEXT_HINTS[1])
 
 
-CAT001_ELEMENTS: dict[str, dict] = {}  # legacy alias; реальные данные через _get_cat001()
+CAT001_ELEMENTS: dict[str, dict] = {}  # legacy alias; real data comes through _get_cat001()
 
 
 # ---------------------------------------------------------------------------
@@ -285,19 +285,19 @@ class RecentLesson:
 
 @dataclass
 class TailorContext:
-    """Входной контракт (PD.SPEC.001)."""
-    student_stage: int                     # 0–4
-    it_level: int                          # 0–3
+    """Input contract (PD.SPEC.001)."""
+    student_stage: int                     # 0-4
+    it_level: int                          # 0-3
     dominant_role: str                     # learner | intellectual | professional | researcher | enlightener
     state: State                           # chaos | stuck | pivot | development
-    energy: int                            # 1–5
-    phase: int                             # 1–4 (из SOP шага 2, или вычисляется по ступени)
-    mastery_by_area: dict[str, int]        # {knowledge: N, tools: N, ...} — N = текущая глубина
-    last_area: int | None                  # область последнего занятия (1–5)
+    energy: int                            # 1-5
+    phase: int                             # 1-4 (from SOP step 2, or computed from the stage)
+    mastery_by_area: dict[str, int]        # {knowledge: N, tools: N, ...} — N = current depth
+    last_area: int | None                  # area of the last session (1-5)
     recent_history: list[RecentLesson]
-    worldview_gaps: list[str]              # [] если L3 не вычислен
-    mastery_gaps: list[str]               # [] если L3 не вычислен
-    domain: str                            # профессиональный домен ученика
+    worldview_gaps: list[str]              # [] if L3 has not been computed
+    mastery_gaps: list[str]               # [] if L3 has not been computed
+    domain: str                            # the student's professional domain
 
     @classmethod
     def from_dict(cls, d: dict) -> "TailorContext":
@@ -323,33 +323,33 @@ class TailorContext:
 
 @dataclass
 class LessonPlan:
-    """Выходной контракт plannerа → вход prompt.md (шаги 5–6)."""
-    area: int                      # 1–5
+    """The planner's output contract → input to prompt.md (steps 5-6)."""
+    area: int                      # 1-5
     element_id: str               # CAT.001.A3, CAT.002.B1, ...
     element_type: str             # "worldview" | "mastery"
     impact_type: ImpactType
-    target_depth: int             # 1–4
-    session_goal: str             # сформулированная цель занятия
-    decision_log: dict            # аудит-след
+    target_depth: int             # 1-4
+    session_goal: str             # the session's stated goal
+    decision_log: dict            # audit trail
 
 
 # ---------------------------------------------------------------------------
-# Вспомогательные функции
+# Helper functions
 # ---------------------------------------------------------------------------
 
 def _stage_to_phase(stage: int) -> int:
-    """SOP шаг 2: ступень → фаза."""
+    """SOP step 2: stage → phase."""
     return {0: 1, 1: 1, 2: 2, 3: 3, 4: 4}.get(stage, 1)
 
 
 def _compute_area_weights(ctx: TailorContext) -> list[float]:
     """
-    SOP шаг 3: вычислить веса областей.
-    Возвращает список из 5 весов [w1, w2, w3, w4, w5].
+    SOP step 3: compute the area weights.
+    Returns a list of 5 weights [w1, w2, w3, w4, w5].
     """
-    weights = list(PHASE_WEIGHTS[ctx.phase])  # копия
+    weights = list(PHASE_WEIGHTS[ctx.phase])  # copy
 
-    # Корректировка по состоянию
+    # Adjust by state
     state_adjustments: dict[str, dict[int, float]] = {
         "chaos":       {5: 2.0, 1: 0.5},
         "stuck":       {3: 1.5, 1: 1.5},
@@ -359,17 +359,17 @@ def _compute_area_weights(ctx: TailorContext) -> list[float]:
     for area_idx, multiplier in state_adjustments.get(ctx.state, {}).items():
         weights[area_idx - 1] *= multiplier
 
-    # Корректировка по энергии
+    # Adjust by energy
     if ctx.energy <= 2:
-        weights[4] *= 1.5  # область 5 (Организм) — индекс 4
+        weights[4] *= 1.5  # area 5 (Organism) — index 4
 
-    # Корректировка по доминирующей роли
+    # Adjust by dominant role
     role_areas = ROLE_AREA_BOOSTS.get(ctx.dominant_role)
     if role_areas:
         for area_idx in role_areas:
             weights[area_idx - 1] *= 1.5
 
-    # Ротация: обнулить вчерашнюю область
+    # Rotation: zero out yesterday's area
     if ctx.last_area is not None:
         weights[ctx.last_area - 1] = 0.0
 
@@ -378,9 +378,9 @@ def _compute_area_weights(ctx: TailorContext) -> list[float]:
 
 def _choose_area(weights: list[float], mastery_by_area: dict[str, int]) -> tuple[int, str]:
     """
-    SOP шаг 3: выбрать область.
-    Критерий: max(вес × gap), где gap = 1 если глубина < 4 иначе 0.
-    Возвращает (area_int, reason_str).
+    SOP step 3: choose the area.
+    Criterion: max(weight x gap), where gap = 1 if depth < 4 else 0.
+    Returns (area_int, reason_str).
     """
     area_keys = ["knowledge", "tools", "constraints", "environment", "organism"]
     scores = []
@@ -392,7 +392,7 @@ def _choose_area(weights: list[float], mastery_by_area: dict[str, int]) -> tuple
 
     total = sum(scores)
     if total == 0:
-        # Все области на максимуме — fallback: берём первую с ненулевым весом
+        # All areas are at max depth — fallback: take the first one with a non-zero weight
         for i, w in enumerate(weights):
             if w > 0:
                 chosen = i + 1
@@ -413,12 +413,12 @@ def _choose_area(weights: list[float], mastery_by_area: dict[str, int]) -> tuple
 
 def _choose_impact_type(ctx: TailorContext) -> tuple[ImpactType, str]:
     """
-    SOP шаг 3: выбор типа воздействия.
-    Базовое соотношение по ступени + корректировка по GAP если есть.
+    SOP step 3: choose the impact type.
+    Base ratio by stage + adjustment by GAP if present.
     """
     worldview_prob = STAGE_WORLDVIEW_PROB.get(ctx.student_stage, 0.5)
 
-    # Корректировка по GAP-отчёту
+    # Adjustment based on the GAP report
     reason = f"base_prob_worldview={worldview_prob:.0%} (stage={ctx.student_stage})"
     if ctx.worldview_gaps or ctx.mastery_gaps:
         wv_gap_count = len(ctx.worldview_gaps)
@@ -452,17 +452,17 @@ def _choose_element_worldview(
     recent_history: list | None = None,
 ) -> tuple[str | None, int, str]:
     """
-    SOP шаг 4: выбрать мем из CAT.001.
-    Возвращает (element_id, target_depth, reason) или (None, 1, reason) если нет элементов.
+    SOP step 4: choose a meme from CAT.001.
+    Returns (element_id, target_depth, reason), or (None, 1, reason) if there are no elements.
 
-    Приоритеты:
-    1. worldview_gaps (от Диагноста) — если есть и не в recent
-    2. CAT.001 из файловой системы — bottleneck-first по глубине
+    Priorities:
+    1. worldview_gaps (from the Diagnostician) — if present and not in recent
+    2. CAT.001 from the filesystem — bottleneck-first by depth
     3. Fallback → prompt.md
     """
     history = recent_history or []
 
-    # 1. GAP-отчёт от Диагноста
+    # 1. GAP report from the Diagnostician
     if worldview_gaps:
         candidates = [e for e in worldview_gaps if e not in recent_ids]
         if candidates:
@@ -475,12 +475,12 @@ def _choose_element_worldview(
         target = min(current_depth + 1, 3)
         return chosen, target, f"worldview_gaps (все recent) → {chosen}, depth {current_depth}→{target}"
 
-    # 2. Загрузить каталог из файловой системы
+    # 2. Load the catalog from the filesystem
     cat001 = _get_cat001()
     if not cat001:
         return None, 1, "нет GAP-отчёта и CAT001 не загружен → prompt.md выбирает из каталога"
 
-    # Фильтр по area и доступности по ступени
+    # Filter by area and stage-based availability
     candidates_pool = {
         eid: meta
         for eid, meta in cat001.items()
@@ -488,7 +488,7 @@ def _choose_element_worldview(
     }
 
     if not candidates_pool:
-        # Расширяем поиск: любая область
+        # Widen the search: any area
         candidates_pool = {
             eid: meta
             for eid, meta in cat001.items()
@@ -497,11 +497,11 @@ def _choose_element_worldview(
         if not candidates_pool:
             return None, 1, f"CAT001: нет доступных мемов для stage={stage}"
 
-    # Исключить recent, если есть что-то за их пределами
+    # Exclude recent ones, if there's anything outside them
     non_recent = {eid: m for eid, m in candidates_pool.items() if eid not in recent_ids}
     pool = non_recent if non_recent else candidates_pool
 
-    # Bottleneck-first: выбрать мем с наибольшим gap (max_depth - current_depth)
+    # Bottleneck-first: choose the meme with the largest gap (max_depth - current_depth)
     best_eid = None
     best_gap = -1
     for eid in pool:
@@ -534,13 +534,13 @@ def _choose_element_mastery(
     recent_history: list[RecentLesson],
 ) -> tuple[str | None, int, str]:
     """
-    SOP шаг 4: выбрать практику из CAT.002 или CAT.003.
-    Возвращает (element_id, target_depth, reason).
+    SOP step 4: choose a practice from CAT.002 or CAT.003.
+    Returns (element_id, target_depth, reason).
     """
-    # Объединяем CAT.002 и CAT.003
+    # Merge CAT.002 and CAT.003
     all_mastery = {**CAT002_ELEMENTS, **CAT003_ELEMENTS}
 
-    # Фильтр по области и доступности по ступени
+    # Filter by area and stage-based availability
     candidates = {
         eid: meta
         for eid, meta in all_mastery.items()
@@ -548,25 +548,25 @@ def _choose_element_mastery(
     }
 
     if not candidates:
-        # Fallback: другая область → prompt.md обработает
+        # Fallback: a different area → prompt.md will handle it
         return None, 1, f"нет mastery-элементов для area={area}, stage={stage} → prompt.md fallback"
 
-    # Исключить recent_ids
+    # Exclude recent_ids
     non_recent = {eid: meta for eid, meta in candidates.items() if eid not in recent_ids}
-    pool = non_recent if non_recent else candidates  # если все recent — возвращаем все
+    pool = non_recent if non_recent else candidates  # if all are recent — return all of them
 
-    # Если есть mastery_gaps — приоритет им
+    # If mastery_gaps exist — give them priority
     if mastery_gaps:
         gap_candidates = [e for e in mastery_gaps if e in pool]
         if gap_candidates:
             chosen = gap_candidates[0]
-            # Определить текущую глубину из recent_history
+            # Determine the current depth from recent_history
             current_depth = _get_current_depth(chosen, recent_history)
             target = current_depth + 1
             return chosen, target, f"mastery_gaps → {chosen}, depth {current_depth}→{target}"
 
-    # Bottleneck-first: найти элемент с наибольшим gap
-    # История ошибок: приоритет элементам с ошибками при равном gap
+    # Bottleneck-first: find the element with the largest gap
+    # Error history: prioritize elements with errors when the gap is equal
     history_map = {r.element_id: r for r in recent_history}
 
     best_eid = None
@@ -575,7 +575,7 @@ def _choose_element_mastery(
 
     for eid in pool:
         current = _get_current_depth(eid, recent_history)
-        target_max = 4  # max degree для CAT.002/003
+        target_max = 4  # max degree for CAT.002/003
         gap = target_max - current
         has_errors = len(history_map.get(eid, RecentLesson(eid, "", 0, 0, False)).errors) > 0
 
@@ -598,7 +598,7 @@ def _choose_element_mastery(
 
 
 def _get_current_depth(element_id: str, history: list[RecentLesson]) -> int:
-    """Найти максимальную пройденную глубину для элемента в истории."""
+    """Find the maximum passed depth for the element in the history."""
     passed = [
         r.depth for r in history
         if r.element_id == element_id and r.passed
@@ -608,8 +608,8 @@ def _get_current_depth(element_id: str, history: list[RecentLesson]) -> int:
 
 def _mastery_gate(element_id: str, target_depth: int, history: list[RecentLesson]) -> tuple[int, str]:
     """
-    SOP шаг 4c: mastery-gate — не повышать глубину без прохождения can-do.
-    Возвращает (actual_depth, reason).
+    SOP step 4c: mastery-gate — do not raise the depth without passing the can-do check.
+    Returns (actual_depth, reason).
     """
     if target_depth <= 1:
         return 1, "новый элемент → depth=1"
@@ -635,43 +635,43 @@ def _build_session_goal(element_id: str | None, impact_type: ImpactType, area: i
 
 
 # ---------------------------------------------------------------------------
-# Основная функция
+# Main function
 # ---------------------------------------------------------------------------
 
 def plan(tailor_context: dict, seed: int | None = None) -> dict:
     """
-    Детерминированный планировщик: SOP.001 шаги 1–4.
+    Deterministic planner: SOP.001 steps 1-4.
 
     Args:
-        tailor_context: словарь по PD.SPEC.001
-        seed: зафиксировать random для воспроизводимости (тесты)
+        tailor_context: a dict per PD.SPEC.001
+        seed: pin random for reproducibility (tests)
 
     Returns:
-        dict с полями LessonPlan + decision_log
+        dict with LessonPlan fields + decision_log
     """
     if seed is not None:
         random.seed(seed)
 
-    # --- Шаг 1: Валидация и разбор входа ---
+    # --- Step 1: Validate and parse the input ---
     try:
         ctx = TailorContext.from_dict(tailor_context)
     except (KeyError, TypeError, ValueError) as e:
         raise ValueError(f"Невалидный tailor_context (PD.SPEC.001): {e}") from e
 
-    # Санитизация user-generated полей
+    # Sanitize user-generated fields
     safe_domain = ctx.domain[:200].replace("\n", " ").replace("\r", "")
     safe_state = ctx.state if ctx.state in ("chaos", "stuck", "pivot", "development") else "development"
     ctx.state = safe_state
 
-    # --- Шаг 2: Фаза (уже в TailorContext.from_dict) ---
+    # --- Step 2: Phase (already computed in TailorContext.from_dict) ---
     phase = ctx.phase
 
-    # --- Шаг 3: Веса, область, тип воздействия ---
+    # --- Step 3: Weights, area, impact type ---
     weights = _compute_area_weights(ctx)
     area, area_reason = _choose_area(weights, ctx.mastery_by_area)
     impact_type, impact_reason = _choose_impact_type(ctx)
 
-    # --- Шаг 4: Элемент и глубина ---
+    # --- Step 4: Element and depth ---
     recent_ids = _get_recent_element_ids(ctx.recent_history)
 
     if impact_type == "worldview":
@@ -693,7 +693,7 @@ def plan(tailor_context: dict, seed: int | None = None) -> dict:
         target_depth = 1
         gate_reason = "элемент не выбран — prompt.md выбирает самостоятельно"
 
-    # Fallback: нет элементов → переключить impact_type
+    # Fallback: no elements → switch impact_type
     if element_id is None and impact_type == "worldview":
         fallback_note = "worldview → нет элементов → fallback mastery"
         impact_type = "mastery"
@@ -717,7 +717,7 @@ def plan(tailor_context: dict, seed: int | None = None) -> dict:
     element_type = "worldview" if impact_type == "worldview" else "mastery"
     session_goal = _build_session_goal(element_id, impact_type, area, target_depth)
 
-    # Контекст FORM.082
+    # FORM.082 context
     context_code = _derive_context(element_id)
     context_hint = _build_context_hint(context_code, ctx.student_stage)
 
@@ -743,7 +743,7 @@ def plan(tailor_context: dict, seed: int | None = None) -> dict:
             "context_hint": context_hint,
         },
         "decision_log": decision_log,
-        # Мета для prompt.md
+        # Metadata for prompt.md
         "context_for_llm": {
             "student_stage": ctx.student_stage,
             "it_level": ctx.it_level,
@@ -759,7 +759,7 @@ def plan(tailor_context: dict, seed: int | None = None) -> dict:
                     "area": r.area,
                     "depth": r.depth,
                     "passed": r.passed,
-                    # errors санитизируется: только первые 5 по 100 символов
+                    # errors are sanitized: only the first 5, capped at 100 chars each
                     "errors": [str(e)[:100] for e in (r.errors or [])[:5]],
                 }
                 for r in ctx.recent_history[:5]
@@ -769,32 +769,32 @@ def plan(tailor_context: dict, seed: int | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Портной-2: plan_horizon() — horizon-aware планировщик (WP-149 Ф9)
+# Tailor-2: plan_horizon() — horizon-aware planner (WP-149 Phase 9)
 # ---------------------------------------------------------------------------
 
-# Маппинг RCS-слот → область FORM.081 и тип воздействия
-# Источник: PD.FORM.089 + SOP.001 матрица весов
+# RCS slot → FORM.081 area and impact type mapping
+# Source: PD.FORM.089 + the SOP.001 weight matrix
 _SLOT_TO_AREA: dict[str, int] = {
-    "W":  1,  # knowledge — мировоззрение через концепции
-    "M1": 3,  # constraints — фокус/собранность как ограничение на attention
-    "M2": 2,  # tools — IWE/ОРЗ как инструмент
-    "M3": 1,  # knowledge — доменные знания
-    "M4": 1,  # knowledge — системное мышление
-    "IT": 2,  # tools — ИТ-инструменты
-    "A":  4,  # environment — агентность через окружение и связи
+    "W":  1,  # knowledge — worldview through concepts
+    "M1": 3,  # constraints — focus/self-organization as a constraint on attention
+    "M2": 2,  # tools — IWE/ORZ as a tool
+    "M3": 1,  # knowledge — domain knowledge
+    "M4": 1,  # knowledge — systems thinking
+    "IT": 2,  # tools — IT tools
+    "A":  4,  # environment — agency through environment and connections
 }
 
 _SLOT_TO_IMPACT: dict[str, ImpactType] = {
-    "W":  "worldview",  # мировоззрение — мемы CAT.001
-    "M1": "mastery",    # фокус — практики CAT.003
-    "M2": "mastery",    # IWE — практики CAT.003
-    "M3": "mastery",    # домен — практики CAT.003
-    "M4": "worldview",  # системное мышление → мировоззрение (мемы CAT.001)
-    "IT": "mastery",    # ИТ-уровень — практики
-    "A":  "worldview",  # агентность → мировоззрение
+    "W":  "worldview",  # worldview — CAT.001 memes
+    "M1": "mastery",    # focus — CAT.003 practices
+    "M2": "mastery",    # IWE — CAT.003 practices
+    "M3": "mastery",    # domain — CAT.003 practices
+    "M4": "worldview",  # systems thinking → worldview (CAT.001 memes)
+    "IT": "mastery",    # IT proficiency — practices
+    "A":  "worldview",  # agency → worldview
 }
 
-# Энергия/триггер → количество помидорок в день
+# Energy/trigger → number of pomodoros per day
 _TRIGGER_TOMATOES: dict[str, int] = {
     "slot_miss": 1,
     "calendar_event": 1,
@@ -807,14 +807,14 @@ _TRIGGER_TOMATOES: dict[str, int] = {
 
 
 def _rcs_to_tailor_context_dict(ctx: "HorizonContext") -> dict:
-    """Конвертирует HorizonContext в совместимый dict для plan().
+    """Converts a HorizonContext into a dict compatible with plan().
 
-    Используется как промежуточный шаг: выбираем область и элемент
-    через существующую логику plan(), но с RCS-based параметрами.
+    Used as an intermediate step: we choose the area and the element
+    through plan()'s existing logic, but with RCS-based parameters.
     """
     from horizons import HorizonContext as HC
     rcs = ctx.rcs
-    # Маппинг RCS stage_derived (1-5 Pack) → student_stage (0-4 код)
+    # RCS stage_derived (1-5 in the Pack) → student_stage (0-4 in code) mapping
     stage_code = max(0, min(4, rcs.stage_derived - 1))
 
     # Bottleneck → state
@@ -828,17 +828,17 @@ def _rcs_to_tailor_context_dict(ctx: "HorizonContext") -> dict:
     else:
         state = "development"
 
-    # Энергия: override от Оркестратора или дефолт по trigger
+    # Energy: Orchestrator override, or a default based on the trigger
     energy = ctx.day.energy_override or (1 if ctx.trigger.kind == "slot_miss" else 3)
 
-    # GAP-списки: приоритет месячным темам из HorizonContext
+    # GAP lists: give priority to the monthly themes from HorizonContext
     worldview_gaps = list(ctx.month.memes) if ctx.month.memes else []
     mastery_gaps = list(ctx.month.methods) if ctx.month.methods else []
 
     return {
         "student_stage": stage_code,
         "it_level": rcs.IT,
-        "dominant_role": "learner",   # нет в RCS — дефолт
+        "dominant_role": "learner",   # not in RCS — default
         "state": state,
         "energy": energy,
         "mastery_by_area": {},
@@ -851,22 +851,23 @@ def _rcs_to_tailor_context_dict(ctx: "HorizonContext") -> dict:
 
 
 def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
-    """Портной-2: horizon-aware планировщик (WP-149 Ф9).
+    """Tailor-2: horizon-aware planner (WP-149 Phase 9).
 
-    Вход: HorizonContext (RCS + 4 горизонта + триггер)
-    Выход: dict с ключами {mode, plan_skeleton, horizon_context, context_for_llm,
-    decision_log} для prompt.md → LLM собирает PlanDay (тип в horizons.py).
-    `PlanDay` намеренно не возвращается из planner — он остаётся выходным
-    контрактом LLM-стадии (шаги 5-6 SOP), а planner отвечает только за каркас.
+    Input: HorizonContext (RCS + 4 horizons + trigger)
+    Output: a dict with keys {mode, plan_skeleton, horizon_context, context_for_llm,
+    decision_log} for prompt.md → the LLM assembles a PlanDay (type defined in horizons.py).
+    `PlanDay` is deliberately not returned from the planner — it stays the output
+    contract of the LLM stage (SOP steps 5-6), while the planner is only responsible
+    for the skeleton.
 
-    Отличия от plan():
-    - Выбор области и impact_type от RCS bottleneck (не от stage weights)
-    - Месячные темы → worldview_gaps / mastery_gaps (приоритет элементов)
-    - Триггер Оркестратора → state, energy, tomatoes
-    - Каскад горизонтов явно передаётся LLM для нарратива
+    Differences from plan():
+    - Area and impact_type are chosen from the RCS bottleneck (not from stage weights)
+    - Monthly themes → worldview_gaps / mastery_gaps (element priority)
+    - Orchestrator trigger → state, energy, tomatoes
+    - The horizon cascade is passed to the LLM explicitly, for the narrative
 
-    mastery_by_area берётся из ctx.mastery_by_area (Ф4.1, WP-203).
-    recent_history остаётся [] — конвертация domain_event → RecentLesson отложена.
+    mastery_by_area comes from ctx.mastery_by_area (Phase 4.1, WP-203).
+    recent_history stays [] — the domain_event → RecentLesson conversion is deferred.
     """
     from horizons import HorizonContext
 
@@ -876,22 +877,22 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
     rcs = ctx.rcs
     bottleneck = ctx.effective_bottleneck()
 
-    # Определяем область и impact_type по bottleneck
+    # Determine the area and impact_type from the bottleneck
     primary_area = _SLOT_TO_AREA.get(bottleneck, 1)
     impact_type = _SLOT_TO_IMPACT.get(bottleneck, "worldview")
 
-    # Если week задаёт focus_area — переопределяем
+    # If week sets focus_area — override
     if ctx.week.focus_area:
         primary_area = ctx.week.focus_area
 
     stage_code = max(0, min(4, rcs.stage_derived - 1))
 
-    # GAP-приоритеты из месячных тем
+    # GAP priorities from the monthly themes
     worldview_gaps = list(ctx.month.memes) if ctx.month.memes else []
     mastery_gaps = list(ctx.month.methods) if ctx.month.methods else []
 
-    # Выбор элемента через существующие функции planner
-    # mastery_by_area из Память.Derived (Ф4.1, WP-203) — активирует _mastery_gate
+    # Choose the element through the planner's existing functions
+    # mastery_by_area from Memory.Derived (Phase 4.1, WP-203) — activates _mastery_gate
     mastery_by_area = getattr(ctx, "mastery_by_area", {}) or {}
     recent_ids: set[str] = set()
     if impact_type == "worldview":
@@ -904,7 +905,7 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
                 primary_area, stage_code, recent_ids, mastery_gaps, mastery_by_area, []
             )
             if element_id is None:
-                # двусторонний fallback: mastery тоже пуст → возврат к worldview
+                # bidirectional fallback: mastery is also empty → fall back to worldview
                 impact_type = "worldview"
                 element_id, raw_depth, element_reason = _choose_element_worldview(
                     primary_area, stage_code, recent_ids, worldview_gaps, mastery_by_area, []
@@ -919,20 +920,20 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
                 primary_area, stage_code, recent_ids, worldview_gaps, mastery_by_area, []
             )
             if element_id is None:
-                # двусторонний fallback: worldview тоже пуст → возврат к mastery
+                # bidirectional fallback: worldview is also empty → fall back to mastery
                 impact_type = "mastery"
                 element_id, raw_depth, element_reason = _choose_element_mastery(
                     primary_area, stage_code, recent_ids, mastery_gaps, mastery_by_area, []
                 )
 
-    # Mastery-gate: не повышать глубину без прохождения can-do (P5 fix)
+    # Mastery-gate: do not raise the depth without passing the can-do check (P5 fix)
     if element_id:
         target_depth, gate_reason = _mastery_gate(element_id, raw_depth, [])
     else:
         target_depth = 1
         gate_reason = "элемент не выбран — prompt.md выбирает самостоятельно"
 
-    # Помидорки: по триггеру + энергии
+    # Pomodoros: based on trigger + energy
     base_tomatoes = _TRIGGER_TOMATOES.get(ctx.trigger.kind, 2)
     energy = ctx.energy()
     if energy <= 2 or ctx.day.calendar_load == "heavy":
@@ -942,10 +943,10 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
     else:
         tomatoes = base_tomatoes
 
-    # Нарратив: какую фазу использовать
+    # Narrative: which phase to use
     narrative_phase = STAGE_NARRATIVE.get(stage_code, ("Я — система", "Я — система"))
 
-    # Форматируем горизонты для LLM
+    # Format the horizons for the LLM
     quarter_block = {
         "bottleneck_slot": ctx.quarter.bottleneck_slot or bottleneck,
         "theme": ctx.quarter.theme,
@@ -1019,11 +1020,11 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# CLI-запуск (headless)
+# CLI entry point (headless)
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Читаем tailor_context из stdin (JSON), выводим lesson_plan в stdout (JSON)
+    # Read tailor_context from stdin (JSON), write lesson_plan to stdout (JSON)
     raw = sys.stdin.read()
     try:
         context = json.loads(raw)

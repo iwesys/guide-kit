@@ -1,10 +1,10 @@
 """
-quarantine.py — guide-kit structurer: карантин «вне оси» (FORMAT.md §4a).
+quarantine.py — guide-kit structurer: "off-axis" quarantine (FORMAT.md §4a).
 
-Scope decision (peer-session 2026-07-15-01, ходы 0-2 — Kimi недоступен на ходу 3,
-дизайн доведён соло по прямому поручению пилота "если Кими не ответит 2 раза —
-делай сам"): the source concept (CONCEPT-full-architecture.md §10) frames the whole
-bucket as "чужие PII, секреты, платёжное" — "чужие" (someone else's) grammatically
+Scope decision (peer-session 2026-07-15-01, turns 0-2 — Kimi unavailable on turn 3,
+design finished solo under the pilot's direct instruction "if Kimi doesn't answer
+twice — do it yourself"): the source concept (CONCEPT-full-architecture.md §10) frames the whole
+bucket as "someone else's PII, secrets, payment data" — "someone else's" grammatically
 attaches to PII specifically, not to secrets/payment (a credit card number is
 contraband regardless of whose it is). Regex cannot distinguish "my own PII" from
 "someone else's" (no identity source exists in this pipeline) — so automatic

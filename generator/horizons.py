@@ -1,12 +1,12 @@
 """
-agents/tailor/horizons.py — Типы для Портного-2 (каскад горизонтов + RCS-вход).
-# see WP-149 Ф11, WP-203 Ф1.5
+agents/tailor/horizons.py — Types for Tailor-2 (horizon cascade + RCS input).
+# see WP-149 Phase 11, WP-203 Phase 1.5
 
-Содержит только типы данных — бизнес-логика выбора в planner.py.
+Contains only data types — selection business logic lives in planner.py.
 
-Два входных формата RCS:
-  - полный (WP-151 Ф12): {worldview: N, mastery: {m1_focus: N, ...}, it_level: N, agency: N}
-  - компактный (render-pilot-guides.py): {W: N, M1: N, M2: N, M4: N, stage: N}
+Two input formats for RCS:
+  - full (WP-151 Phase 12): {worldview: N, mastery: {m1_focus: N, ...}, it_level: N, agency: N}
+  - compact (render-pilot-guides.py): {W: N, M1: N, M2: N, M4: N, stage: N}
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from typing import Literal, Optional
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RCS Profile (PD.FORM.089, 7 слотов)
+# RCS Profile (PD.FORM.089, 7 slots)
 # ─────────────────────────────────────────────────────────────────────────────
 
 SLOT_LABELS: dict[str, str] = {
@@ -34,26 +34,26 @@ _ALL_SLOTS = ("W", "M1", "M2", "M3", "M4", "IT", "A")
 
 @dataclass
 class RCSProfile:
-    """RCS-профиль (PD.FORM.089, 7 слотов), каждый 1–5."""
+    """RCS profile (PD.FORM.089, 7 slots), each 1-5."""
 
-    W:  int = 1   # Мировоззрение
-    M1: int = 1   # Фокус и собранность
-    M2: int = 1   # IWE / ОРЗ
-    M3: int = 1   # Домен
-    M4: int = 1   # Системное мышление
-    IT: int = 1   # ИТ-уровень
-    A:  int = 1   # Агентность
+    W:  int = 1   # Worldview
+    M1: int = 1   # Focus and self-organization
+    M2: int = 1   # IWE / ORZ (Opening-Work-Closing)
+    M3: int = 1   # Domain
+    M4: int = 1   # Systems thinking
+    IT: int = 1   # IT proficiency
+    A:  int = 1   # Agency
 
-    bottleneck: str = "M1"     # слот с наибольшим разрывом
-    stage_derived: int = 1     # вычисленная ступень (1–5)
+    bottleneck: str = "M1"     # slot with the largest gap
+    stage_derived: int = 1     # computed stage (1-5)
     source: str = "manual"     # diagnostic_session | computed_from_events | manual
-    confidence: float = 0.0    # уверенность расчёта (0..1)
+    confidence: float = 0.0    # confidence of the computation (0..1)
 
     @classmethod
     def from_dict(cls, d: dict) -> "RCSProfile":
-        """Создать из словаря. Поддерживает полный и компактный форматы."""
+        """Build from a dict. Supports both the full and the compact format."""
         if "worldview" in d:
-            # Полный формат (WP-151 Ф12)
+            # Full format (WP-151 Phase 12)
             mastery = d.get("mastery", {})
             return cls(
                 W=int(d.get("worldview", 1)),
@@ -68,7 +68,7 @@ class RCSProfile:
                 source=str(d.get("source", "manual")),
                 confidence=float(d.get("confidence", 0.0)),
             )
-        # Компактный формат (render-pilot-guides.py)
+        # Compact format (render-pilot-guides.py)
         stage = int(d.get("stage", d.get("stage_derived", 1)))
         return cls(
             W=int(d.get("W", 1)),
@@ -85,7 +85,7 @@ class RCSProfile:
         )
 
     def weakest_slots(self, n: int = 2) -> list[str]:
-        """n слотов с наименьшим значением (кандидаты на bottleneck)."""
+        """n slots with the lowest value (bottleneck candidates)."""
         vals = [(s, getattr(self, s)) for s in _ALL_SLOTS]
         return [s for s, _ in sorted(vals, key=lambda x: x[1])[:n]]
 
@@ -101,20 +101,20 @@ class RCSProfile:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Orchestrator triggers (WP-203 Ф1.5)
+# Orchestrator triggers (WP-203 Phase 1.5)
 # ─────────────────────────────────────────────────────────────────────────────
 
 TriggerKind = Literal[
-    "routine",          # плановый запуск без событий
-    "slot_miss",        # срыв слота (нет помидорки N дней)
-    "focus_shift",      # пользователь сообщил смену темы
-    "metric_jump",      # резкий рост/падение RCS-слота
-    "calendar_event",   # конференция, командировка, релиз
-    "blocker",          # артефакты не растут по ветке ≥2 нед
-    "hypothesis_fail",  # week-end сверка: ожидаемо ≠ факт
+    "routine",          # scheduled run, no events
+    "slot_miss",        # slot missed (no completed session for N days)
+    "focus_shift",      # user reported a topic change
+    "metric_jump",      # sharp rise/drop in an RCS slot
+    "calendar_event",   # conference, business trip, release
+    "blocker",          # artifacts haven't grown along this branch for >=2 weeks
+    "hypothesis_fail",  # week-end check: expected != actual
 ]
 
-# Тактические (корректируют ДЗ), стратегические (меняют гипотезу/фокус)
+# Tactical (adjust the assignment), strategic (change the hypothesis/focus)
 TACTICAL_TRIGGERS: frozenset[str] = frozenset({"routine", "slot_miss", "calendar_event"})
 STRATEGIC_TRIGGERS: frozenset[str] = frozenset({"focus_shift", "metric_jump", "blocker", "hypothesis_fail"})
 
@@ -122,7 +122,7 @@ STRATEGIC_TRIGGERS: frozenset[str] = frozenset({"focus_shift", "metric_jump", "b
 @dataclass
 class OrchestratorTrigger:
     kind: TriggerKind = "routine"
-    detail: str = ""     # человекочитаемое описание события
+    detail: str = ""     # human-readable description of the event
     severity: int = 0    # 0=routine, 1=tactical, 2=strategic, 3=escalate
 
     def is_tactical(self) -> bool:
@@ -133,91 +133,91 @@ class OrchestratorTrigger:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Четыре горизонта
+# Four horizons
 # ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class QuarterFocus:
-    """Квартальный горизонт — фокус и bottleneck квартала."""
-    bottleneck_slot: str = ""              # слот RCS приоритета квартала
-    theme: str = ""                        # текстовая тема квартала
-    target_delta: dict[str, int] = field(default_factory=dict)  # {slot: целевой_прирост}
+    """Quarterly horizon — the quarter's focus and bottleneck."""
+    bottleneck_slot: str = ""              # RCS slot that is the quarter's priority
+    theme: str = ""                        # quarter's theme, as text
+    target_delta: dict[str, int] = field(default_factory=dict)  # {slot: target_increase}
 
 
 @dataclass
 class MonthThemes:
-    """Месячный горизонт — 1–3 мема/метода месяца."""
-    memes: list[str] = field(default_factory=list)    # element_id из CAT.001
-    methods: list[str] = field(default_factory=list)  # element_id из CAT.003
-    label: str = ""     # текстовая тема (содержимое monthly-theme.md)
+    """Monthly horizon — 1-3 memes/methods for the month."""
+    memes: list[str] = field(default_factory=list)    # element_id from CAT.001
+    methods: list[str] = field(default_factory=list)  # element_id from CAT.003
+    label: str = ""     # theme as text (contents of monthly-theme.md)
 
 
 @dataclass
 class WeekHypothesis:
-    """Недельный горизонт — гипотеза недели."""
-    expected_delta: dict[str, float] = field(default_factory=dict)  # {slot: ожидаемый_прирост}
-    slack_budget: float = 0.2   # допустимая доля пропусков (0..1)
-    focus_area: int = 0         # область FORM.081 (0=авто по RCS bottleneck)
-    label: str = ""             # текстовое описание гипотезы
+    """Weekly horizon — this week's hypothesis."""
+    expected_delta: dict[str, float] = field(default_factory=dict)  # {slot: expected_increase}
+    slack_budget: float = 0.2   # allowed share of misses (0..1)
+    focus_area: int = 0         # FORM.081 area (0=auto, from the RCS bottleneck)
+    label: str = ""             # hypothesis description, as text
 
 
 @dataclass
 class DayEvents:
-    """Тактический вход от Оркестратора — события дня."""
-    missed_slots: int = 0           # помидорок пропущено за последние N дней
+    """Tactical input from the Orchestrator — the day's events."""
+    missed_slots: int = 0           # sessions missed over the last N days
     calendar_load: Literal["light", "normal", "heavy"] = "normal"
-    energy_override: Optional[int] = None   # если Оркестратор знает лучше (1–5)
-    notes: str = ""                 # произвольные заметки
+    energy_override: Optional[int] = None   # set if the Orchestrator knows better (1-5)
+    notes: str = ""                 # free-form notes
 
 
 @dataclass
 class ArtifactsSummary:
-    """Что пользователь создал за период (из WP-109 classifier)."""
+    """What the user created over the period (from the WP-109 classifier)."""
     count: int = 0
     by_type: dict[str, int] = field(default_factory=dict)    # {artifact_type: count}
-    recent_titles: list[str] = field(default_factory=list)   # последние N названий
+    recent_titles: list[str] = field(default_factory=list)   # last N titles
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HorizonContext — главный вход Портного-2
+# HorizonContext — Tailor-2's main input
 # ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class HorizonContext:
-    """Полный вход Портного-2 (WP-149 Ф11): RCS + 4 горизонта + артефакты + триггер.
+    """Tailor-2's full input (WP-149 Phase 11): RCS + 4 horizons + artifacts + trigger.
 
-    Заменяет плоский TailorContext для horizon-aware режима.
-    Совместимость с текущим render-pilot-guides.py через from_render_context().
+    Replaces the flat TailorContext for horizon-aware mode.
+    Compatible with the current render-pilot-guides.py via from_render_context().
     """
 
     rcs: RCSProfile
     trigger: OrchestratorTrigger = field(default_factory=OrchestratorTrigger)
 
-    # 4 горизонта (пустые поля → planner.py строит из RCS)
+    # 4 horizons (empty fields -> planner.py derives them from RCS)
     quarter: QuarterFocus = field(default_factory=QuarterFocus)
     month: MonthThemes = field(default_factory=MonthThemes)
     week: WeekHypothesis = field(default_factory=WeekHypothesis)
     day: DayEvents = field(default_factory=DayEvents)
 
     artifacts: ArtifactsSummary = field(default_factory=ArtifactsSummary)
-    summary_events: str = ""    # события из render-pilot-guides.py (B2)
-    mastery_by_area: dict = field(default_factory=dict)  # Ф4.1: {area_key: depth} из Память.Derived
-    pilot_reflection: str = ""  # рефлексия пилота вчера (history/YYYY-MM-DD-reflection.txt)
-    reflection_learned: list[str] = field(default_factory=list)  # Q3 «Что узнал» за 7 дней
-    tomorrow_intention: str = ""  # Q5 «Что завтра» из последней рефлексии
+    summary_events: str = ""    # events from render-pilot-guides.py (B2)
+    mastery_by_area: dict = field(default_factory=dict)  # Phase 4.1: {area_key: depth} from Memory.Derived
+    pilot_reflection: str = ""  # pilot's reflection from yesterday (history/YYYY-MM-DD-reflection.txt)
+    reflection_learned: list[str] = field(default_factory=list)  # Q3 "What I learned" over 7 days
+    tomorrow_intention: str = ""  # Q5 "What's next" from the latest reflection
 
     def effective_bottleneck(self) -> str:
-        """Актуальный bottleneck: квартальный если задан, иначе из RCS."""
+        """Effective bottleneck: quarterly if set, otherwise from RCS."""
         return self.quarter.bottleneck_slot or self.rcs.bottleneck
 
     def effective_focus_area(self) -> int:
-        """Область недели: из недельной гипотезы или 0 (planner выберет сам)."""
+        """Week's area: from the weekly hypothesis, or 0 (planner will choose)."""
         return self.week.focus_area
 
     def energy(self) -> int:
-        """Энергия: override от Оркестратора или дефолт 3.
+        """Energy: Orchestrator override, or default 3.
 
-        Поддерживает energy_override=0 (очень низкая энергия) — не заменяет на 3.
+        Supports energy_override=0 (very low energy) — does not replace it with 3.
         """
         return 3 if self.day.energy_override is None else self.day.energy_override
 
@@ -228,10 +228,10 @@ class HorizonContext:
         events_summary: str = "",
         monthly_theme_md: str = "",
     ) -> "HorizonContext":
-        """Конструктор совместимости с render-pilot-guides.py.
+        """Compatibility constructor for render-pilot-guides.py.
 
-        Используется до полной реализации Оркестратора (WP-203).
-        Горизонты quarter/week/day остаются пустыми — planner.py заполнит из RCS.
+        Used until the Orchestrator (WP-203) is fully implemented.
+        The quarter/week/day horizons stay empty — planner.py will fill them from RCS.
         """
         rcs = RCSProfile.from_dict(rcs_dict)
         month = MonthThemes(label=(monthly_theme_md or "")[:500])
@@ -243,32 +243,32 @@ class HorizonContext:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PlanDay — выход Портного-2
+# PlanDay — Tailor-2's output
 # ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class DZItem:
-    """Одно задание в дневном пакете."""
+    """One assignment in the daily package."""
     element_id: str
     element_type: str    # worldview | mastery
-    area: int            # 1–5 (FORM.081)
-    target_depth: int    # глубина разбора
-    tomatoes: int = 1    # ожидаемое количество помидорок
-    label: str = ""      # краткое название
-    rationale: str = ""  # почему именно это сегодня
+    area: int            # 1-5 (FORM.081)
+    target_depth: int    # depth of the study session
+    tomatoes: int = 1    # expected number of pomodoro sessions
+    label: str = ""      # short title
+    rationale: str = ""  # why this particular item today
 
 
 @dataclass
 class PlanDay:
-    """Выход Портного-2 — дневной пакет ДЗ + нарратив (WP-149 Ф11).
+    """Tailor-2's output — daily assignment package + narrative (WP-149 Phase 11).
 
-    Заменяет dict-выход plan() для horizon-aware режима.
-    Совместим: plan() возвращает dict, plan_horizon() возвращает PlanDay.
+    Replaces plan()'s dict output for horizon-aware mode.
+    Compatible: plan() returns a dict, plan_horizon() returns a PlanDay.
     """
     items: list[DZItem]
-    narrative: str              # 1–2 абзаца «почему именно это сегодня»
-    week_label: str = ""        # ISO-неделя (2026-W19)
-    trigger_response: str = ""  # реакция на триггер Оркестратора
+    narrative: str              # 1-2 paragraphs on "why this particular item today"
+    week_label: str = ""        # ISO week (2026-W19)
+    trigger_response: str = ""  # response to the Orchestrator's trigger
     decision_log: dict = field(default_factory=dict)
 
     def total_tomatoes(self) -> int:

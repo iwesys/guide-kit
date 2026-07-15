@@ -1,5 +1,5 @@
 """
-test_media.py — guide-kit structurer tests, media preprocessing slice (WP-483 Ф2, FORMAT.md §1).
+test_media.py — guide-kit structurer tests, media preprocessing slice (WP-483 Phase 2, FORMAT.md §1).
 Run: cd structurer && pytest
 
 Uses `cat` as a stand-in extractor command — it's present on every CI/dev

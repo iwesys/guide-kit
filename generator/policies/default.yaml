@@ -1,16 +1,18 @@
-# guide-kit default content policy (WP-483 Ф1).
+# guide-kit default content policy (WP-483 Phase 1).
 #
-# required_attribution_slots: что обязано иметь честный источник в decision_log,
-# иначе adapter.py hard-fail'ит вместо того, чтобы молча выдать пустой/выдуманный
-# результат. accepted_methods — какие extraction_method покрывают слот.
+# required_attribution_slots: what must have an honest source in decision_log,
+# or adapter.py hard-fails instead of silently emitting an empty/fabricated
+# result. accepted_methods — which extraction_method values satisfy the slot.
 #
-# llm_assisted_confidence — КОНСТАНТА, которую задаёт автор policy. adapter.py
-# её не вычисляет и не берёт из самооценки LLM (пир-сессия WP-483 Ф1, ход 3-4:
-# самооценка LLM превращает hard-fail в декорацию).
+# llm_assisted_confidence — a CONSTANT set by the policy author. adapter.py
+# does not compute it and does not take it from the LLM's self-assessment
+# (peer-session WP-483 Phase 1, turn 3-4: an LLM self-assessment would turn
+# the hard-fail into decoration).
 #
-# Оба required-слота ниже разрешают llm-assisted по умолчанию — иначе портативный
-# профиль без курикулы (Марина/Дэвид, WP-289 §4) гарантированно fail'ил бы каждый
-# прогон, и «честный пробел» превращался бы в «нерабочий продукт».
+# Both required slots below allow llm-assisted by default — otherwise a
+# portable profile without a curriculum (Marina/David, WP-289 §4) would
+# reliably fail every run, and an "honest gap" would turn into a
+# "non-functional product".
 
 required_attribution_slots:
   - slot: narrative

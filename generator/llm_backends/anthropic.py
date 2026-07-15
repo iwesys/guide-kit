@@ -1,4 +1,4 @@
-"""Anthropic Messages API backend (guide-kit, WP-483 Ф1).
+"""Anthropic Messages API backend (guide-kit, WP-483 Phase 1).
 
 Separate driver, not a variant of openai_compatible: the Messages API puts
 `system` at the top level (not inside `messages`), uses `x-api-key` +

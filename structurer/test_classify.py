@@ -1,5 +1,5 @@
 """
-test_classify.py — guide-kit structurer tests (WP-483 Ф2).
+test_classify.py — guide-kit structurer tests (WP-483 Phase 2).
 Run: cd structurer && pytest
 """
 from __future__ import annotations

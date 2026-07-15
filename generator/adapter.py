@@ -1,5 +1,5 @@
 """
-adapter.py — guide-kit generator adapter (WP-483 Ф1).
+adapter.py — guide-kit generator adapter (WP-483 Phase 1).
 
 Bridges a user's profile.yaml (WP-476 axes 2.1-2.4) to the deterministic
 planner (planner.py + horizons.py) and a configurable LLM backend, producing
@@ -47,8 +47,8 @@ DEFAULT_POLICY_PATH = os.path.join(_GENERATOR_DIR, "policies", "default.yaml")
 # ---------------------------------------------------------------------------
 
 def _read_yaml(path: str) -> dict:
-    """Читает YAML-файл. Синтаксически битый файл — та же партиальная-толерантность,
-    что и отсутствующий: лог + пусто, не крах (WP-483 Ф1, ревью после implementation)."""
+    """Reads a YAML file. A syntactically broken file gets the same partial-tolerance
+    treatment as a missing one: log + empty, not a crash (WP-483 Phase 1, post-implementation review)."""
     try:
         with open(path, encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
@@ -58,7 +58,7 @@ def _read_yaml(path: str) -> dict:
 
 
 def load_config(config_path: str | None) -> dict:
-    """Загружает guide-kit.config.yaml. Отсутствие файла — не ошибка: все поля опциональны."""
+    """Loads guide-kit.config.yaml. A missing file is not an error: all fields are optional."""
     if not config_path or not os.path.isfile(config_path):
         logger.info("no config at %r — using defaults (no curriculum, anthropic backend)", config_path)
         return {}
@@ -66,11 +66,11 @@ def load_config(config_path: str | None) -> dict:
 
 
 def load_policy(policy_path: str | None) -> dict:
-    """Загружает hard-fail policy.
+    """Loads the hard-fail policy.
 
-    В отличие от config/profile отсутствие файла — НЕ безопасный дефолт: пустая
-    policy означает "обязательных слотов нет", то есть гейт пропустит любой
-    результат. Явная ошибка лучше тихого отключения защиты от выдумки фактов.
+    Unlike config/profile, a missing file here is NOT a safe default: an empty
+    policy would mean "no required slots", so the gate would let any result through.
+    An explicit error is better than silently disabling the no-invented-facts guard.
     """
     path = policy_path or DEFAULT_POLICY_PATH
     if not os.path.isfile(path):
@@ -82,7 +82,7 @@ def load_policy(policy_path: str | None) -> dict:
 
 
 def load_profile(profile_path: str) -> dict:
-    """Толерантен к отсутствию/частичному профилю — пустой профиль = корректное холодное состояние."""
+    """Tolerant of a missing/partial profile — an empty profile is a valid cold-start state."""
     if not os.path.isfile(profile_path):
         logger.info("no profile at %r — cold start (empty profile)", profile_path)
         return {}
@@ -90,7 +90,7 @@ def load_profile(profile_path: str) -> dict:
 
 
 def load_card_content(element_id: str | None, cards_path: str | None) -> dict | None:
-    """Ищет карточку по element_id в локальном cards_path. Нет пути/файла/битый JSON → None (честно)."""
+    """Looks up a card by element_id under the local cards_path. No path/file/broken JSON → None (honestly)."""
     if not element_id or not cards_path:
         return None
     candidate = os.path.join(cards_path, f"{element_id}.json")
@@ -109,13 +109,13 @@ def load_card_content(element_id: str | None, cards_path: str | None) -> dict | 
 # ---------------------------------------------------------------------------
 
 def _from_dict_safe(cls, d: dict):
-    """dataclass из словаря, игнорируя незнакомые ключи — партиальный профиль не должен падать."""
+    """Build a dataclass from a dict, ignoring unknown keys — a partial profile must not crash."""
     known = {f.name for f in dataclasses.fields(cls)}
     return cls(**{k: v for k, v in d.items() if k in known})
 
 
 def build_horizon_context(profile: dict) -> HorizonContext:
-    """profile.yaml (2.1-2.4, WP-476) → HorizonContext. Пустой профиль → RCSProfile()+пустые горизонты."""
+    """profile.yaml (2.1-2.4, WP-476) → HorizonContext. An empty profile → RCSProfile() + empty horizons."""
     rcs_dict = profile.get("rcs") or {}
     rcs = RCSProfile.from_dict(rcs_dict) if rcs_dict else RCSProfile()
     trigger_dict = profile.get("trigger") or {}
@@ -137,17 +137,18 @@ def build_horizon_context(profile: dict) -> HorizonContext:
 
 
 # ---------------------------------------------------------------------------
-# decision_log + hard-fail gate (WP-483 Ф1, пир-сессия ход 3-4)
+# decision_log + hard-fail gate (WP-483 Phase 1, peer-session turn 3-4)
 # ---------------------------------------------------------------------------
 
 def build_decision_log(planner_result: dict, llm_ok: bool, timestamp: str) -> list[dict]:
-    """Per-slot журнал происхождения: откуда взят каждый обязательный факт.
+    """Per-slot provenance log: where each required fact came from.
 
-    confidence присутствует на КАЖДОЙ записи, не только llm-assisted (спецификация
-    Ф1 §2 показывает его на direct-примере тоже — единообразная схема, а не
-    опциональное поле). Для derived — 1.0: bottleneck-first в planner.py либо
-    находит конкретный элемент детерминированно, либо возвращает None (тогда
-    ниже это уже llm-assisted); частичной уверенности здесь не бывает.
+    confidence is present on EVERY entry, not just llm-assisted ones (the Phase 1
+    §2 spec shows it on the direct example too — a uniform schema, not an
+    optional field). For derived — always 1.0: bottleneck-first in planner.py
+    either finds a specific element deterministically, or returns None (in which
+    case it's already llm-assisted below); there's no such thing as partial
+    confidence here.
     """
     element_id = planner_result["plan_skeleton"]["element_id"]
     entries = [
@@ -156,7 +157,7 @@ def build_decision_log(planner_result: dict, llm_ok: bool, timestamp: str) -> li
             "source_file": "planner.py",
             "source_field": planner_result["decision_log"].get("element_choice", ""),
             "extraction_method": "derived" if element_id else "llm-assisted",
-            "confidence": 1.0 if element_id else None,  # llm-assisted: policy проставит ниже
+            "confidence": 1.0 if element_id else None,  # llm-assisted: policy will fill this in below
             "timestamp": timestamp,
         },
     ]
@@ -167,7 +168,7 @@ def build_decision_log(planner_result: dict, llm_ok: bool, timestamp: str) -> li
                 "source_file": "llm_backend",
                 "source_field": "narrative",
                 "extraction_method": "llm-assisted",
-                "confidence": None,  # policy проставит в apply_hard_fail_gate
+                "confidence": None,  # policy will fill this in inside apply_hard_fail_gate
                 "timestamp": timestamp,
             }
         )
@@ -175,17 +176,19 @@ def build_decision_log(planner_result: dict, llm_ok: bool, timestamp: str) -> li
 
 
 def apply_hard_fail_gate(decision_log: list[dict], policy: dict) -> tuple[bool, str]:
-    """Проверяет ТОЛЬКО происхождение (required_attribution_slots). Возвращает (passed, reason).
+    """Checks ONLY provenance (required_attribution_slots). Returns (passed, reason).
 
-    Это первая из двух проверок в конвейере, не единственная: непустота самого
-    контента (narrative/plan_day) — отдельная проверка сразу после вызова этой
-    функции, в generate_daily_plan (независимая находка ревью — валидный JSON
-    с пустым содержимым мог пройти ЭТУ функцию, раз атрибуция в порядке).
+    This is the first of two checks in the pipeline, not the only one: whether
+    the content itself (narrative/plan_day) is non-empty is a separate check
+    right after this function is called, in generate_daily_plan (an independent
+    review finding — valid JSON with empty content could pass THIS function
+    since attribution was fine).
 
-    confidence для extraction_method="llm-assisted" — константа из policy
-    (задана автором policy заранее), не вычисляется здесь и не самооценивается
-    LLM: иначе порог confidence проходит тривиально и hard-fail становится
-    декорацией (найдено в пир-сессии, ход 3).
+    confidence for extraction_method="llm-assisted" is a constant taken from the
+    policy (set by the policy author ahead of time), not computed here and not
+    self-assessed by the LLM: otherwise the confidence threshold would pass
+    trivially and the hard-fail would become decoration (found during the
+    peer-session, turn 3).
     """
     by_slot = {entry["slot"]: entry for entry in decision_log}
     for required in policy.get("required_attribution_slots", []):
@@ -242,10 +245,10 @@ def generate_daily_plan(
     policy_path: str | None = None,
     seed: int | None = None,
 ) -> GuideResult:
-    """profile.yaml → planner → LLM backend → hard-fail gate → markdown или диагностика.
+    """profile.yaml → planner → LLM backend → hard-fail gate → markdown or diagnostic.
 
-    ok=True  → .markdown — готовый текст.
-    ok=False → .diagnostic — причина отказа (не молчаливый пустой результат).
+    ok=True  → .markdown — the finished text.
+    ok=False → .diagnostic — reason for the failure (never a silent empty result).
     """
     config = load_config(config_path)
     policy = load_policy(policy_path)
@@ -317,8 +320,9 @@ def generate_daily_plan(
     narrative = llm_output.get("narrative", "")
     plan_day = llm_output.get("plan_day", [])
     if not narrative or not plan_day:
-        # decision_log только проверяет ПРОИСХОЖДЕНИЕ факта, не то, что LLM реально
-        # что-то вернул — валидный JSON с пустым plan_day прошёл бы gate молча (ревью).
+        # decision_log only checks the PROVENANCE of a fact, not whether the LLM
+        # actually returned something — valid JSON with an empty plan_day would
+        # have passed the gate silently (found during review).
         logger.error("LLM returned valid JSON but empty content: narrative=%r plan_day=%r", bool(narrative), plan_day)
         return GuideResult(
             ok=False,
@@ -344,7 +348,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
-    parser = argparse.ArgumentParser(description="guide-kit generator adapter (WP-483 Ф1)")
+    parser = argparse.ArgumentParser(description="guide-kit generator adapter (WP-483 Phase 1)")
     parser.add_argument("--profile", default="profile.yaml")
     parser.add_argument("--config", default="guide-kit.config.yaml")
     parser.add_argument("--policy", default=None)
@@ -356,7 +360,7 @@ if __name__ == "__main__":
     if result.ok:
         output = result.markdown
     else:
-        # диагностический YAML — не молчаливый пустой результат (hard-fail policy)
+        # diagnostic YAML — never a silent empty result (hard-fail policy)
         output = "---\n" + yaml.safe_dump(result.diagnostic, allow_unicode=True, sort_keys=False) + "---\n"
 
     if args.out:

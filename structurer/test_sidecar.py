@@ -1,5 +1,5 @@
 """
-test_sidecar.py — guide-kit structurer tests, sidecar slice (WP-483 Ф2, FORMAT.md §5).
+test_sidecar.py — guide-kit structurer tests, sidecar slice (WP-483 Phase 2, FORMAT.md §5).
 Run: cd structurer && pytest
 """
 from __future__ import annotations

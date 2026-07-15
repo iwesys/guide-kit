@@ -1,5 +1,5 @@
 """
-test_quarantine.py — guide-kit structurer tests, quarantine slice (WP-483 Ф2, FORMAT.md §4a).
+test_quarantine.py — guide-kit structurer tests, quarantine slice (WP-483 Phase 2, FORMAT.md §4a).
 Run: cd structurer && pytest
 """
 from __future__ import annotations
@@ -132,7 +132,7 @@ def test_unrecognized_boolean_value_ignored_not_crashed():
 # ---------------------------------------------------------------------------
 
 def test_homes_typed_file_still_quarantined_if_secret_inside(tmp_path):
-    # Regression case requested in peer-session 2026-07-15-01 (Kimi, turn 1, п.3):
+    # Regression case requested in peer-session 2026-07-15-01 (Kimi, turn 1, item 3):
     # homes.yaml assigning a type must not shortcut the quarantine check.
     (tmp_path / "daily-notes").mkdir()
     f = tmp_path / "daily-notes" / "2026-06-01.md"

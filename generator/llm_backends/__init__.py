@@ -1,4 +1,4 @@
-"""guide-kit LLM backend dispatch (WP-483 Ф1, spec §2).
+"""guide-kit LLM backend dispatch (WP-483 Phase 1, spec §2).
 
 Three backends behind one dispatch function — not one unified contract,
 because the Anthropic Messages API is not shape-compatible with the OpenAI

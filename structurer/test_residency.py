@@ -1,6 +1,6 @@
 """
 test_residency.py — guide-kit structurer tests, residency access-check slice
-(WP-483 Ф2 peer-session, 2026-07-15). Run: cd structurer && pytest
+(WP-483 Phase 2 peer-session, 2026-07-15). Run: cd structurer && pytest
 """
 from __future__ import annotations
 

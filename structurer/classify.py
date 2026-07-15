@@ -1,7 +1,7 @@
 """
 classify.py — guide-kit structurer: orchestrates homes.yaml + structural signals into
-type-index.json (FORMAT.md §2-§4). Deterministic slice only: frontmatter override →
-homes.yaml → event-date signal → honest 2.4 default. Quarantine, media preprocessing,
+type-index.json (FORMAT.md §2-§4). Deterministic slice only: homes.yaml → frontmatter
+override → event-date signal → honest 2.4 default. Quarantine, media preprocessing,
 sidecar overrides, and the LLM fallback are separate slices (WP-483 Ф2 checklist), not
 implemented here.
 
@@ -29,15 +29,26 @@ _SKIP_FILES = frozenset({"homes.yaml", "guide-kit.config.yaml", "extractors.yaml
 
 
 def classify_file(rel_path: str, abs_path: str, homes: list[HomeRule]) -> dict:
-    """One type-index.json entry, per FORMAT.md §3 precedence: non-text extension →
-    homes.yaml (non-"auto") → frontmatter override → event-date signal → default 2.4."""
+    """One type-index.json entry, per FORMAT.md §3 precedence: homes.yaml (non-"auto")
+    → non-text extension → frontmatter override → event-date signal → default 2.4.
+
+    homes.yaml is consulted for EVERY file, text or not (FORMAT.md §4's own
+    whiteboard.png example: "placement-only if homes.yaml covers this path" — a user
+    can categorize a photo by folder even with no OCR extractor installed). A non-text
+    file with no homes.yaml coverage is honestly "pending", not silently dropped;
+    one WITH coverage still gets "pending" too — homes.yaml assigns a category, it
+    doesn't manufacture readable content that isn't there."""
+    home = match_home(rel_path, homes)
+    home_type = home.type if home is not None and home.type != "auto" else None
+
     ext = os.path.splitext(rel_path)[1].lower()
     if ext not in TEXT_EXTENSIONS:
+        if home_type is not None:
+            return {"type": home_type, "pending": "needs-extractor", "source": "homes"}
         return {"type": None, "pending": "needs-extractor"}
 
-    home = match_home(rel_path, homes)
-    if home is not None and home.type != "auto":
-        return {"type": home.type, "mode": "index", "confidence": 1.0, "source": "homes"}
+    if home_type is not None:
+        return {"type": home_type, "mode": "index", "confidence": 1.0, "source": "homes"}
 
     frontmatter = read_frontmatter(abs_path)
 

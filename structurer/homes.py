@@ -16,7 +16,11 @@ from dataclasses import dataclass
 
 import yaml
 
+from signals import VALID_TYPES
+
 logger = logging.getLogger(__name__)
+
+_ALLOWED_HOME_TYPES = VALID_TYPES | {"auto"}
 
 
 @dataclass
@@ -27,8 +31,12 @@ class HomeRule:
 
 
 def load_homes(path: str) -> list[HomeRule]:
-    """Tolerant of a missing file: no homes.yaml means every path falls through to the
-    per-file classifier (FORMAT.md §3)."""
+    """Tolerant of a missing file (no homes.yaml means every path falls through to
+    the per-file classifier, FORMAT.md §3), of individual malformed rules (skipped
+    with a warning, not fatal to the whole file — the same tolerance §3's frontmatter
+    override already gets), and of an unrecognized `type` (skipped, same reasoning:
+    a typo should degrade to "no rule", not silently propagate a garbage type into
+    type-index.json)."""
     try:
         with open(path, encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
@@ -38,37 +46,52 @@ def load_homes(path: str) -> list[HomeRule]:
     except yaml.YAMLError as e:
         logger.error("malformed homes.yaml at %r: %s — treating as absent", path, e)
         return []
-    return [HomeRule(r["path"], r["type"], r.get("note", "")) for r in data.get("homes", [])]
+
+    rules: list[HomeRule] = []
+    for entry in data.get("homes", []):
+        try:
+            rule = HomeRule(entry["path"], str(entry["type"]), entry.get("note", ""))
+        except (KeyError, TypeError) as e:
+            logger.warning("malformed homes.yaml rule %r: %s — skipping", entry, e)
+            continue
+        if rule.type not in _ALLOWED_HOME_TYPES:
+            logger.warning("homes.yaml rule %r has unrecognized type %r — skipping", rule.pattern, rule.type)
+            continue
+        rules.append(rule)
+    return rules
 
 
 def _segments(path: str) -> list[str]:
-    """Splits on "/" and collapses consecutive "**" into one — "a/**/**/b" means the
-    same as "a/**/b", and matching each "**" separately is a polynomial-time trap for
-    no semantic gain (a pattern with several would re-scan the remaining path once per
-    "**" before the next one collapses)."""
-    raw = [s for s in path.split("/") if s != ""]
-    collapsed: list[str] = []
-    for segment in raw:
-        if segment == "**" and collapsed and collapsed[-1] == "**":
-            continue
-        collapsed.append(segment)
-    return collapsed
+    return [s for s in path.split("/") if s != ""]
 
 
 def _segment_matches(rel_segments: list[str], pattern_segments: list[str]) -> bool:
     """"**" (only valid as a whole segment) consumes zero or more remaining segments;
     every other pattern segment matches exactly one segment via single-segment fnmatch
-    (no "/" left inside a segment, so "*"/"?"/"[...]" can't accidentally cross a boundary)."""
-    if not pattern_segments:
-        return not rel_segments
-    head, rest = pattern_segments[0], pattern_segments[1:]
-    if head == "**":
-        if not rest:
-            return True
-        return any(_segment_matches(rel_segments[i:], rest) for i in range(len(rel_segments) + 1))
-    if not rel_segments:
-        return False
-    return fnmatch.fnmatch(rel_segments[0], head) and _segment_matches(rel_segments[1:], rest)
+    (no "/" left inside a segment, so "*"/"?"/"[...]" can't accidentally cross a
+    boundary). Memoized on (rel_index, pattern_index): naive backtracking on multiple
+    non-adjacent "**" segments is exponential (verified: a 12-deep alternating
+    "**"/"*" pattern took 12s unmemoized) — this is the standard DP formulation for
+    wildcard matching, O(len(rel) * len(pattern)) regardless of how many "**" appear
+    or whether they're adjacent."""
+    memo: dict[tuple[int, int], bool] = {}
+
+    def match(ri: int, pi: int) -> bool:
+        key = (ri, pi)
+        if key in memo:
+            return memo[key]
+        if pi == len(pattern_segments):
+            result = ri == len(rel_segments)
+        else:
+            head = pattern_segments[pi]
+            if head == "**":
+                result = match(ri, pi + 1) or (ri < len(rel_segments) and match(ri + 1, pi))
+            else:
+                result = ri < len(rel_segments) and fnmatch.fnmatch(rel_segments[ri], head) and match(ri + 1, pi + 1)
+        memo[key] = result
+        return result
+
+    return match(0, 0)
 
 
 def _specificity(pattern_segments: list[str]) -> tuple[int, int]:

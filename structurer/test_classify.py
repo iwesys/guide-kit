@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 
 from classify import classify_file, walk_and_classify, write_type_index
-from homes import HomeRule, match_home
+from homes import HomeRule, load_homes, match_home
 from signals import detect_event_date, read_frontmatter, read_frontmatter_override
 
 
@@ -55,9 +55,8 @@ def test_tie_keeps_first_rule_in_file_order():
     assert match_home("notes/foo.md", rules).type == "2.4"
 
 
-def test_consecutive_double_star_collapses():
-    # "a/**/**/b" must behave exactly like "a/**/b", not degrade in speed or in
-    # correctness — regression test for the polynomial-recursion finding.
+def test_consecutive_double_star_matches():
+    # "a/**/**/b" must behave exactly like "a/**/b".
     rules = [HomeRule("a/**/**/b.md", "2.3")]
     assert match_home("a/x/y/z/b.md", rules).type == "2.3"
 
@@ -65,6 +64,38 @@ def test_consecutive_double_star_collapses():
 def test_no_matching_rule_returns_none():
     rules = [HomeRule("daily-notes/**", "2.2")]
     assert match_home("concepts/idea.md", rules) is None
+
+
+def test_non_adjacent_double_star_does_not_blow_up():
+    # Naive backtracking on several non-adjacent "**" segments is exponential
+    # (verified: 12 alternating "**"/"*" segments took 12s unmemoized). The
+    # memoized matcher must stay fast regardless — this is the actual regression
+    # this test guards, not just the narrow "consecutive **" case above.
+    pattern = "/".join(["**", "*"] * 12) + "/target.md"
+    rules = [HomeRule(pattern, "2.3")]
+    non_matching_path = "/".join(["seg"] * 24) + "/not-the-target.md"
+    assert match_home(non_matching_path, rules) is None  # must return promptly, not hang
+
+
+def test_load_homes_skips_malformed_rule_not_fatal(tmp_path):
+    # A rule missing "type" must not abort parsing every other rule in the file.
+    f = tmp_path / "homes.yaml"
+    f.write_text("homes:\n  - path: broken/**\n  - path: ok/**\n    type: \"2.3\"\n")
+    rules = load_homes(str(f))
+    assert [r.pattern for r in rules] == ["ok/**"]
+
+
+def test_load_homes_skips_unrecognized_type(tmp_path):
+    f = tmp_path / "homes.yaml"
+    f.write_text('homes:\n  - path: "weird/**"\n    type: "2.99"\n')
+    assert load_homes(str(f)) == []
+
+
+def test_load_homes_accepts_auto(tmp_path):
+    f = tmp_path / "homes.yaml"
+    f.write_text('homes:\n  - path: "archive/**"\n    type: "auto"\n')
+    rules = load_homes(str(f))
+    assert rules[0].type == "auto"
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +199,18 @@ def test_non_text_file_is_pending_not_skipped(tmp_path):
     f.write_bytes(b"\x89PNG\r\n")
     entry = classify_file("photo.png", str(f), [])
     assert entry == {"type": None, "pending": "needs-extractor"}
+
+
+def test_non_text_file_under_homes_rule_gets_type_but_stays_pending(tmp_path):
+    # FORMAT.md §4's own whiteboard.png example: homes.yaml can categorize a binary
+    # file by folder even with no extractor installed — it assigns a type, it doesn't
+    # manufacture text content that isn't there.
+    (tmp_path / "photos").mkdir()
+    f = tmp_path / "photos" / "whiteboard.png"
+    f.write_bytes(b"\x89PNG\r\n")
+    homes = [HomeRule("photos/**", "2.3")]
+    entry = classify_file("photos/whiteboard.png", str(f), homes)
+    assert entry == {"type": "2.3", "pending": "needs-extractor", "source": "homes"}
 
 
 def test_walk_skips_structurer_output_dir(tmp_path):

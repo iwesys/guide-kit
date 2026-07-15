@@ -9,10 +9,12 @@ You own a base of notes (Obsidian vault, Notion export, a folder of markdown, yo
 ## Pipeline order
 
 ```
-media preprocessing → homes.yaml → per-file classifier → quarantine → freshness → type-index.json
+media preprocessing → quarantine → homes.yaml → per-file classifier → freshness → type-index.json
 ```
 
 Each stage only narrows what the previous stage left undecided. A file that a sidecar override already typed skips every later stage; a file no stage can place lands as `2.4`, never as a guess.
+
+**Quarantine runs before typing, not after** (revised 2026-07-15 — the original draft placed it after the classifier; implementation found that a file already typed by `homes.yaml` never even had its content read, so a post-hoc quarantine check would either skip that file or force an unconditional re-read anyway). It is still cross-cutting, not a numbered stage of its own: any content-bearing file gets scanned once, before anything else decides its type, and a positive result short-circuits every stage that would follow.
 
 ---
 
@@ -77,7 +79,7 @@ Applies only where `homes.yaml` didn't already decide (no match, or `type: "auto
 4. LLM classification — **only** for files still ambiguous after 1–3, and only if an LLM backend is configured (`guide-kit.config.yaml`). Zero-config installs skip this step entirely.
 5. **Default: `2.4`.** If nothing above placed the file — including "LLM disabled" — it is `2.4`, not a guess at a more specific type. Guessing content is exactly the failure mode `guide-kit` refuses to have (same "no invented facts" invariant that governs the hard-fail gate in `generator/adapter.py` and the missing-extractor case in §1). This is a deliberate trade-off: a file that would read as `2.3` to a human eye may still land in `2.4` when the signal is genuinely ambiguous and no LLM is configured to break the tie. That's the honest failure mode, not silent misclassification.
 
-**Quarantine is cross-cutting**, not a fifth step: any of 1–4 can trigger it (see §4), and it takes priority over whatever type the step would otherwise have assigned.
+**Quarantine is cross-cutting**, not a fifth step: it runs before 1–4 (see pipeline order above and §4a), and it takes priority over whatever type the step would otherwise have assigned.
 
 ---
 
@@ -140,9 +142,23 @@ Field reference:
 
 ### 4a. Quarantine — outside the axis, not a value on it
 
-Quarantine is **not** one of the 2.1-2.4 types — a quarantined file is out-of-axis by definition (mirrors the concept's own framing: "карантин «вне оси»"). It is encoded as a sibling `quarantine` object on the entry, with `type: null`, not as a string value inside `type`. `reason` is one of `pii` \| `secret` \| `payment` \| `third-party-pii` (this enum, and the `excluded_from_generation`/`detected_by` field names, are this document's own proposal — the source concept names the buckets in prose only and doesn't specify a wire schema; flag for confirmation before implementation).
+Quarantine is **not** one of the 2.1-2.4 types — a quarantined file is out-of-axis by definition (mirrors the concept's own framing: "карантин «вне оси»"). It is encoded as a sibling `quarantine` object on the entry, with `type: null`, not as a string value inside `type`. `reason` is one of `pii` \| `secret` \| `payment` \| `third-party-pii` (this enum, and the `excluded_from_generation`/`detected_by` field names, were this document's own proposal — confirmed by implementation, peer-session 2026-07-15-01).
 
 There is no normative `quarantine.yaml` — quarantine status lives on the `type-index.json` entry itself, so the Generator's loader filters on one field (`quarantine` presence) instead of cross-referencing two files. The Structurer additionally writes `.structurer/quarantine-report.md` — a plain-language list of quarantined paths and reasons, meant for the human to skim and correct false positives, not a second source of truth.
+
+**What's actually detected vs. forced-flag-only (implementation decision, 2026-07-15).** The source concept frames the whole bucket as "чужие PII" (**someone else's** PII) — a credit card number or an API key is contraband regardless of whose it is, but a person's own email in their own notes is not a leak. A regex has no way to tell "my phone number" from "someone else's" (no identity source exists in this pipeline), so:
+
+- `secret` and `payment` are detected automatically — ownership is irrelevant, the pattern alone is the signal (known vendor token formats, PEM private key headers, a labeled high-entropy assignment for arbitrary third-party keys; Luhn-valid card numbers, checksum-valid IBANs).
+- `pii` and `third-party-pii` are **not** detected by heuristic in this slice. They stay valid `reason` values, reachable only through the forced flag below (or a future LLM-assisted pass) — guessing "this email belongs to someone else" is exactly the invented-fact failure mode this format refuses to have (same principle as the `2.4` default in §3 and the missing-extractor case in §1).
+
+**Forced flag and escape hatch, for text files.** `speakers_third_party: true` was originally documented only as a sidecar field (§5, binaries without frontmatter); it is equally valid as a frontmatter key on text files — same forced-quarantine semantics, `reason: third-party-pii`, `detected_by: "forced-flag"`. Symmetrically, `quarantine: false` in frontmatter is the escape hatch for a heuristic false positive (a `secret`/`payment` match on the user's own legitimate data, e.g. documentation containing an example key). If both are set on the same file, the forced flag wins — a stale `quarantine: false` left over from an earlier edit must not silently override an explicit "this exposes someone else's data" statement.
+
+```yaml
+---
+type: "2.3"
+quarantine: false   # this "AKIA..." string is a documentation example, not a real key
+---
+```
 
 ---
 

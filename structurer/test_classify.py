@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 
-from classify import classify_file, walk_and_classify, write_type_index
+from classify import classify_file, main, walk_and_classify, write_type_index
 from homes import HomeRule, load_homes, match_home
 from signals import detect_event_date, read_frontmatter, read_frontmatter_override
 
@@ -250,3 +250,31 @@ def test_write_type_index_wraps_with_schema_version(tmp_path):
     written = json.loads(out.read_text())
     assert written["schema_version"] == 1
     assert written["files"]["a.md"]["type"] == "2.4"
+
+
+# ---------------------------------------------------------------------------
+# classify.py — main() CLI
+# ---------------------------------------------------------------------------
+
+def test_default_homes_path_resolves_against_base_not_cwd(tmp_path, monkeypatch):
+    # Cold-review finding, 2026-07-15 (round 2): the default `--homes homes.yaml`
+    # was resolved against the process's CWD, not --base — a homes.yaml sitting in
+    # the base was silently ignored, and one sitting in whatever the CWD happened to
+    # be was silently applied instead. Move the CWD elsewhere with its own unrelated
+    # homes.yaml, and confirm the base's own rule wins.
+    base = tmp_path / "base"
+    base.mkdir()
+    (base / "daily-notes").mkdir()
+    (base / "daily-notes" / "note.md").write_text("body\n")
+    (base / "homes.yaml").write_text('homes:\n  - path: "daily-notes/**"\n    type: "2.2"\n')
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "homes.yaml").write_text('homes:\n  - path: "daily-notes/**"\n    type: "2.3"\n')
+    monkeypatch.chdir(elsewhere)
+
+    monkeypatch.setattr("sys.argv", ["classify.py", "--base", str(base)])
+    main()
+
+    written = json.loads((base / ".structurer" / "type-index.json").read_text())
+    assert written["files"]["daily-notes/note.md"]["type"] == "2.2"

@@ -151,14 +151,20 @@ def write_quarantine_report(files: dict[str, dict], out_path: str) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description="guide-kit structurer: classify a note base into type-index.json")
     parser.add_argument("--base", required=True, help="path to the user's note base")
-    parser.add_argument("--homes", default="homes.yaml", help="path to homes.yaml (tolerant of absence)")
+    parser.add_argument("--homes", default="homes.yaml", help="relative to --base unless absolute; tolerant of absence")
     parser.add_argument("--out", default=".structurer/type-index.json", help="relative to --base unless absolute")
     parser.add_argument("--quarantine-report", default=".structurer/quarantine-report.md", help="relative to --base unless absolute")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-    homes = load_homes(args.homes)
+    # Resolved against --base, not the process's CWD (cold-review finding, 2026-07-15
+    # round 2): an unresolved relative path here silently picked up whatever
+    # homes.yaml happened to sit in the caller's working directory — sometimes none
+    # (silent no-op), sometimes an unrelated one (silent misclassification with the
+    # wrong rules). Same resolution pattern already used for --out below.
+    homes_path = args.homes if os.path.isabs(args.homes) else os.path.join(args.base, args.homes)
+    homes = load_homes(homes_path)
     files = walk_and_classify(args.base, homes)
     out_path = args.out if os.path.isabs(args.out) else os.path.join(args.base, args.out)
     write_type_index(files, out_path)

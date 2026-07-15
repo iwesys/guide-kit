@@ -9,15 +9,22 @@ is always something the platform itself answers; this module never guesses
 it (lesson from WP-262/WP-406: a locally duplicated onboarding state machine
 drifts from the platform's and rots).
 
-A missing platform_connect_url degrades to a link-less pointer instead of a
-sentinel placeholder — a literal placeholder string ending up in someone's
-guide would be a defect, not a valid degraded state.
+An explicitly blanked-out platform_connect_url (config sets it to "") degrades
+to a link-less pointer instead of a sentinel placeholder — a literal
+placeholder string ending up in someone's guide would be a defect, not a
+valid degraded state.
 """
 from __future__ import annotations
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+# The hosted platform's public MCP connector — a real, stable artifact
+# (documented in DS-MCP/gateway-mcp/docs/IWE-USER-GUIDE-RU.md), not something
+# guide-kit invents. A fork pointing at a different platform overrides this
+# via config; an explicit empty string in config suppresses the link entirely.
+DEFAULT_PLATFORM_CONNECT_URL = "https://mcp.aisystant.com/mcp"
 
 _PLATFORM_BLOCK_HEADER = "### Дальше — платформа (опционально)"
 _PLATFORM_BLOCK_BODY = (
@@ -38,23 +45,27 @@ def render_onboarding_ctas(config: dict) -> str:
 
     config keys (both optional):
       onboarding_ctas (bool, default True) — master on/off switch.
-      platform_connect_url (str, default "") — canonical connect link; the
-        pilot names this artifact, guide-kit does not invent it (Artifact
-        Naming rule). Empty → the platform block still renders, just without
-        a link line, and a warning is logged so the gap is visible at build
-        time rather than silently missing.
+      platform_connect_url (str, default DEFAULT_PLATFORM_CONNECT_URL) —
+        connect link. Absent or null (the repo's usual "not configured"
+        sentinel, same as curriculum_path/cards_path in adapter.py) → defaults
+        to the hosted platform's own connector. Explicitly set to "" →
+        the platform block still renders, just without a link line, and a
+        warning is logged so the gap is visible at build time rather than
+        silently missing (e.g. a fork that hasn't set its own URL yet).
     """
     if not config.get("onboarding_ctas", True):
         return ""
 
-    platform_url = config.get("platform_connect_url", "") or ""
+    platform_url = config.get("platform_connect_url")
+    if platform_url is None:
+        platform_url = DEFAULT_PLATFORM_CONNECT_URL
     platform_block = f"{_PLATFORM_BLOCK_HEADER}\n{_PLATFORM_BLOCK_BODY}"
     if platform_url:
         platform_block += f"\n\nСсылка: {platform_url}"
     else:
         logger.warning(
-            "platform_connect_url not set in config — rendering the platform "
-            "invitation without a link (this is a valid degraded state, not an error)"
+            "platform_connect_url is blank — rendering the platform invitation "
+            "without a link (this is a valid degraded state, not an error)"
         )
 
     return "\n\n".join(["---", "## Дальше — опционально", platform_block, _IWE_BLOCK])

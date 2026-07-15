@@ -1,6 +1,6 @@
 """Tests for onboarding_ctas.py (WP-483 Phase 3). Run: cd generator && pytest"""
 
-from onboarding_ctas import render_onboarding_ctas
+from onboarding_ctas import DEFAULT_PLATFORM_CONNECT_URL, render_onboarding_ctas
 
 
 class TestRenderOnboardingCtas:
@@ -10,16 +10,29 @@ class TestRenderOnboardingCtas:
     def test_default_is_enabled(self):
         assert render_onboarding_ctas({}) != ""
 
-    def test_enabled_without_url_omits_link_line(self):
+    def test_no_url_configured_uses_platform_default(self):
         appendix = render_onboarding_ctas({"onboarding_ctas": True})
+        assert f"Ссылка: {DEFAULT_PLATFORM_CONNECT_URL}" in appendix
+
+    def test_null_url_in_config_uses_platform_default(self):
+        """guide-kit.config.yaml.example uses YAML `null` as its "not configured"
+        sentinel for optional fields (same convention as curriculum_path/cards_path
+        in adapter.py) — yaml.safe_load turns that into Python None, which must be
+        treated the same as an absent key, not as an explicit blank override."""
+        appendix = render_onboarding_ctas({"onboarding_ctas": True, "platform_connect_url": None})
+        assert f"Ссылка: {DEFAULT_PLATFORM_CONNECT_URL}" in appendix
+
+    def test_explicit_blank_url_omits_link_line(self):
+        appendix = render_onboarding_ctas({"onboarding_ctas": True, "platform_connect_url": ""})
         assert "Ссылка:" not in appendix
         assert "MCP-серверу платформы" in appendix
 
-    def test_enabled_with_url_includes_link_line(self):
+    def test_custom_url_overrides_default(self):
         appendix = render_onboarding_ctas(
             {"onboarding_ctas": True, "platform_connect_url": "https://example.invalid/connect"}
         )
         assert "Ссылка: https://example.invalid/connect" in appendix
+        assert DEFAULT_PLATFORM_CONNECT_URL not in appendix
 
     def test_no_cascade_enumeration(self):
         """The CTA text must never list the onboarding cascade as a procedure

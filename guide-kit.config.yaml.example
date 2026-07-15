@@ -35,7 +35,9 @@ llm_api_key: null
 # this off if you never want to see them.
 onboarding_ctas: true
 
-# Canonical link for the platform invitation block. Not set (empty string) →
-# the block still renders, just without a link line — guide-kit does not
-# invent this URL on its own.
-platform_connect_url: ""
+# Link for the platform invitation block. Not set here → defaults to the
+# hosted platform's own public MCP connector (https://mcp.aisystant.com/mcp).
+# Set to "" explicitly to suppress the link line (e.g. a fork of guide-kit
+# that doesn't want to point at this platform yet); set to another URL to
+# point at a different platform entirely.
+platform_connect_url: null

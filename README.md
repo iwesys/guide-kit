@@ -48,9 +48,10 @@ to is always asked for its own next step, and its answer is shown to you
 as-is. Turn both off with `onboarding_ctas: false` in your config.
 
 - **Connect to the hosted platform** — a pointer telling your AI agent to
-  ask the platform's own MCP server what to do next. `platform_connect_url`
-  is empty by default (guide-kit does not invent this link); set it once the
-  canonical one exists.
+  ask the platform's own MCP server what to do next. Defaults to the hosted
+  Aisystant platform's public connector (`https://mcp.aisystant.com/mcp`);
+  override `platform_connect_url` to point at a different platform, or set it
+  to `""` to suppress the link entirely.
 - **Adopt the full IWE template** — a pointer to `setup.sh` for users whose
   AI agent is Claude Code.
 

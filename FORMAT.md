@@ -208,7 +208,7 @@ superseded_by: null           # path or id of the fact that replaced this one
 
 `2.1-declared`/`2.1-derived` facts typically use the TTL form (things about you drift). `2.3` conceptual knowledge typically uses `superseded_by` (a definition doesn't expire, it gets replaced).
 
-**`ttl_days` as the exact field name is this document's own proposal, not a confirmed convention** — the upstream freshness model (WP-476 §П4) specifies the two-mechanism shape (expiration vs. supersede) but not a wire field name for the expiration case; the closest existing implementation (`memory-lifecycle-spec.md`) uses `valid_from`/`superseded_by`/`status` with no TTL field at all. Confirm against WP-476's own artifact schema once it's finalized, rather than treating `ttl_days` here as settled.
+**`ttl_days` is a confirmed convention as of 2026-07-16** — originally this document's own proposal (the upstream freshness model, WP-476 §П4, specified the two-mechanism shape but no wire field name), it was adopted verbatim by WP-476's own reference application: the Ф4а freshness markup of the author's `personal/` and `Lifework/` homes uses exactly `valid_from`/`ttl_days`/`superseded_by`, making this file and that markup the same convention.
 
 ---
 

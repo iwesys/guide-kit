@@ -359,6 +359,29 @@ class TestExportIntegration:
         assert data["provenance"]["stage_label"] == "Профессионал"
         assert data["is_derived"] is True
 
+    def test_export_writes_full_bundle_when_stage_and_rcs_both_available(self, tmp_path, monkeypatch):
+        """P.2(a) acceptance (WP-483 MVP acceptance): 'exportable in under an
+        hour' presumes the export is COMPLETE, not just fast — a bundle missing
+        half the available data would technically finish quickly while still
+        failing the promise. Only prior coverage exercised stage-only or
+        rcs-only; this is the one where both sources return real data."""
+        monkeypatch.setenv("GUIDE_KIT_PLATFORM_TOKEN", "testtoken")
+        out = tmp_path / "profile.platform.yaml"
+        with patch.object(pe, "fetch_stage", return_value=(4, "Исследователь", None)), \
+             patch.object(pe, "fetch_rcs", return_value={"W": 3, "M1": 2, "confidence": 0.7}):
+            code = pe.export("http://localhost/mcp", "rcs_path", str(out))
+        assert code == 0
+        data = yaml.safe_load(out.read_text())
+        assert data["origin"] == "platform"
+        assert data["platform_url"] == "http://localhost/mcp"
+        assert data["is_derived"] is True
+        assert data["fetched_at"]  # non-empty timestamp, exact value not asserted (real clock)
+        assert data["rcs"]["stage_derived"] == 4
+        assert data["rcs"]["W"] == 3
+        assert data["rcs"]["M1"] == 2
+        assert data["rcs"]["confidence"] == 0.7
+        assert data["provenance"]["stage_label"] == "Исследователь"
+
     def test_export_parse_failure_writes_raw(self, tmp_path, monkeypatch):
         monkeypatch.setenv("GUIDE_KIT_PLATFORM_TOKEN", "testtoken")
         out = tmp_path / "profile.platform.yaml"

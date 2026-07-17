@@ -180,8 +180,18 @@ def build_iwe_section(base: str, dayplan_path: str | None) -> tuple[str, list[di
             "note": f"no DayPlan found at {resolved_path}",
         }]
 
-    with open(full_path, encoding="utf-8") as fh:
-        text = fh.read()
+    try:
+        with open(full_path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError) as e:
+        logger.error("could not read DayPlan at %r: %s — treating as absent", full_path, e)
+        return "", [{
+            "slot": "work_section",
+            "value": None,
+            "source": "dayplan",
+            "extraction_method": "absent",
+            "note": f"DayPlan at {resolved_path} could not be read: {e}",
+        }]
 
     rows = _parse_dayplan_rows(text)
     if not rows:

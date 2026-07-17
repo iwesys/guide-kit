@@ -28,6 +28,7 @@ from llm_backends import GenerationResult
 _PII_CANARY_EMAIL = "canary-pii-user@nowhere-fixture.invalid"
 _PII_CANARY_PHONE = "+7-999-CANARY-PII"
 _PII_CANARY_NAME  = "CanaryFirstname CanaryLastname"
+_PII_CANARY_CARD  = "4111-1111-1111-CANARY"
 
 _QUARANTINE_CONTENT = "SECRET-canary-content-quarantined-XYZ789"
 
@@ -43,7 +44,7 @@ def _build_fixture_profile():
         },
         "mastery_by_area": {"area_1": 0.5},
         # PII canaries in free-text fields that should stay local
-        "pilot_reflection": f"From {_PII_CANARY_NAME}: {_PII_CANARY_EMAIL}",
+        "pilot_reflection": f"From {_PII_CANARY_NAME}: {_PII_CANARY_EMAIL}, card {_PII_CANARY_CARD}",
         "tomorrow_intention": _PII_CANARY_PHONE,
     }
 
@@ -101,6 +102,7 @@ class TestPiiCanariesNotInPlatformPayload:
             assert _PII_CANARY_EMAIL not in body_str, "PII email in platform request"
             assert _PII_CANARY_PHONE not in body_str, "PII phone in platform request"
             assert _PII_CANARY_NAME not in body_str, "PII name in platform request"
+            assert _PII_CANARY_CARD not in body_str, "PII card number in platform request"
 
     def test_profile_pii_not_in_read_request(self, monkeypatch, tmp_path):
         """dt_read_digital_twin request body must not contain local profile PII."""
@@ -119,6 +121,7 @@ class TestPiiCanariesNotInPlatformPayload:
             assert _PII_CANARY_EMAIL not in body_str
             assert _PII_CANARY_PHONE not in body_str
             assert _PII_CANARY_NAME not in body_str
+            assert _PII_CANARY_CARD not in body_str
 
     def test_overlay_payload_contains_only_platform_derived_data(self, monkeypatch, tmp_path):
         """profile.platform.yaml must contain only platform-derived values, not local PII."""
@@ -134,6 +137,49 @@ class TestPiiCanariesNotInPlatformPayload:
         assert _PII_CANARY_EMAIL not in raw
         assert _PII_CANARY_PHONE not in raw
         assert _PII_CANARY_NAME not in raw
+        assert _PII_CANARY_CARD not in raw
+
+
+# ---------------------------------------------------------------------------
+# (1b) Full pipeline — generate_daily_plan itself must never touch the
+# network beyond the (mocked) LLM call, even with a local overlay file
+# present. This is the concrete regression test for the FORMAT.md claim
+# (corrected during review) that personal_export runs automatically before
+# generation — it does not: apply_platform_overlay only reads an
+# already-on-disk file. If any code in this real pipeline dialed the
+# platform directly, conftest's session-wide socket guard would raise here.
+# ---------------------------------------------------------------------------
+
+class TestFullPipelineDoesNotTouchPlatformNetwork:
+    def _fake_llm_ok(self, *_args, **_kwargs):
+        return GenerationResult(
+            text='{"narrative": "текст", "plan_day": [{"label": "задание", "tomatoes": 1}]}',
+            backend_id="fake",
+            model="fake",
+        )
+
+    def test_generate_daily_plan_with_local_overlay_makes_no_platform_call(self, tmp_path):
+        profile_path = tmp_path / "profile.yaml"
+        profile_path.write_text(yaml.dump(_build_fixture_profile()), encoding="utf-8")
+        (tmp_path / "profile.platform.yaml").write_text(
+            yaml.dump({"rcs": {"M2": 3, "source": "computed_from_events"}}),
+            encoding="utf-8",
+        )
+        with patch("adapter.llm_generate", side_effect=self._fake_llm_ok):
+            result = generate_daily_plan(str(profile_path))
+        assert result.ok, getattr(result, "diagnostic", None)
+
+    def test_apply_platform_overlay_alone_makes_no_network_call(self, tmp_path):
+        """Unit-level companion: the merge function imported by adapter.py, called
+        directly, must be pure local file I/O — no personal_export/network call."""
+        profile_path = tmp_path / "profile.yaml"
+        profile_path.write_text(yaml.dump(_build_fixture_profile()), encoding="utf-8")
+        (tmp_path / "profile.platform.yaml").write_text(
+            yaml.dump({"rcs": {"M2": 3, "source": "computed_from_events"}}),
+            encoding="utf-8",
+        )
+        merged = apply_platform_overlay(_build_fixture_profile(), str(profile_path))
+        assert merged["rcs"]["M2"] == 3  # overlay-only field proves the merge really ran
 
 
 # ---------------------------------------------------------------------------

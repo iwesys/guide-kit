@@ -42,6 +42,15 @@ onboarding_ctas: true
 # point at a different platform entirely.
 platform_connect_url: null
 
+# Merge a local profile.platform.yaml (produced separately by running
+# generator/personal_export.py — see FORMAT.md § Platform pull) into the
+# declared profile.yaml at generation time. Default true. This is a local
+# file merge only — turning it on does NOT itself fetch anything or make
+# any network call; personal_export.py must be run on its own to produce
+# that file in the first place. false — ignore any profile.platform.yaml
+# on disk and use the declared profile as-is.
+personal_export: on
+
 # The optional "what's active" block (README.md § Work section). Read-only,
 # no LLM. off (default) — no section. generic — lists any 2.2-typed file
 # from the structurer's type-index.json, title + link only. iwe — this

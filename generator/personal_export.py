@@ -93,7 +93,10 @@ def _unwrap_content(result: dict) -> dict | None:
         return None
     content = result.get("content")
     if isinstance(content, list) and content:
-        text = content[0].get("text", "")
+        first = content[0]
+        if not isinstance(first, dict):
+            return None
+        text = first.get("text", "")
         if not text:
             return None
         try:
@@ -157,8 +160,33 @@ def fetch_stage(
         return None, None, raw[:500]
 
 
+_RCS_INT_SLOTS = frozenset({"W", "M1", "M2", "M3", "M4", "IT", "A", "stage_derived"})
+
+
+def _validate_rcs_field(key: str, value):
+    """Validate one RCS field value. Returns the validated value, or None to drop it
+    (with a stderr warning) — a malformed field degrades gracefully instead of
+    crashing RCSProfile.from_dict() downstream."""
+    try:
+        if key in _RCS_INT_SLOTS:
+            v = int(value)
+            if not 1 <= v <= 5:
+                raise ValueError(f"{v} вне диапазона 1-5")
+            return v
+        if key == "confidence":
+            v = float(value)
+            if not 0.0 <= v <= 1.0:
+                raise ValueError(f"{v} вне диапазона 0-1")
+            return v
+        return value  # bottleneck, source — free-form strings, no fixed range to check
+    except (TypeError, ValueError) as e:
+        print(f"WARNING: rcs.{key}={value!r} отброшено — {e}", file=sys.stderr)
+        return None
+
+
 def fetch_rcs(platform_url: str, token: str, rcs_path: str) -> dict | None:
-    """Fetch RCS data at rcs_path. Returns only compact keys actually returned by the platform."""
+    """Fetch RCS data at rcs_path. Returns only compact keys actually returned by the
+    platform, each individually validated — a malformed field is dropped, not fatal."""
     if not _describe_path(platform_url, token, rcs_path):
         print(f"NOTE: rcs_path {rcs_path!r} не найден на платформе — пропускаем", file=sys.stderr)
         return None
@@ -167,7 +195,14 @@ def fetch_rcs(platform_url: str, token: str, rcs_path: str) -> dict | None:
     if not data:
         return None
 
-    return {k: v for k, v in data.items() if k in _RCS_COMPACT_KEYS} or None
+    result = {}
+    for k, v in data.items():
+        if k not in _RCS_COMPACT_KEYS:
+            continue
+        validated = _validate_rcs_field(k, v)
+        if validated is not None:
+            result[k] = validated
+    return result or None
 
 
 def export(platform_url: str, rcs_path: str | None, output_path: str) -> int:
@@ -175,6 +210,18 @@ def export(platform_url: str, rcs_path: str | None, output_path: str) -> int:
 
     On any error: prints to stderr, does NOT write the output file.
     """
+    # .lower(), not os.path.normcase(): normcase is a no-op on POSIX, but macOS's
+    # default filesystem is case-insensitive regardless — "PROFILE.YAML" must
+    # still be refused.
+    if os.path.basename(output_path).lower() == "profile.yaml":
+        print(
+            "ERROR: --output не может называться profile.yaml — это перезаписало бы "
+            "собственный файл пользователя чужим (платформенным) содержимым; "
+            "выгрузка пишется отдельным файлом (по умолчанию profile.platform.yaml)",
+            file=sys.stderr,
+        )
+        return 1
+
     token = os.environ.get("GUIDE_KIT_PLATFORM_TOKEN", "").strip()
     if not token:
         print(
@@ -228,7 +275,10 @@ def export(platform_url: str, rcs_path: str | None, output_path: str) -> int:
     return 0
 
 
-if __name__ == "__main__":
+def _build_parser() -> argparse.ArgumentParser:
+    """Real CLI parser — also used directly by tests, so a swallowed-flag
+    regression (the class of bug that caused a past production incident)
+    is caught against the actual shipped parser, not a duplicated stand-in."""
     parser = argparse.ArgumentParser(
         description="guide-kit personal export — fetches derived profile from the IWE platform"
     )
@@ -247,6 +297,9 @@ if __name__ == "__main__":
         default="profile.platform.yaml",
         help="Output file path (default: profile.platform.yaml)",
     )
-    args = parser.parse_args()
+    return parser
 
+
+if __name__ == "__main__":
+    args = _build_parser().parse_args()
     sys.exit(export(args.platform_url, args.rcs_path, args.output))

@@ -111,10 +111,9 @@ def _merge_rcs(declared_rcs: dict, overlay_rcs: dict) -> dict:
     """
     declared_source = declared_rcs.get("source") or ""
     if not declared_source:
-        import sys as _sys
         print(
             "WARNING: declared rcs.source is missing — treating as 'manual'",
-            file=_sys.stderr,
+            file=sys.stderr,
         )
         declared_source = "manual"
 

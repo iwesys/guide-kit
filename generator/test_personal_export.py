@@ -10,7 +10,6 @@ Unit coverage:
 import io
 import json
 import os
-import sys
 import urllib.error
 from unittest.mock import MagicMock, patch
 
@@ -110,18 +109,43 @@ class TestAllowlist:
 
 class TestStrictArgparse:
     def test_unknown_flag_exits_2(self):
+        """Exercises the real shipped parser (pe._build_parser), not a stand-in —
+        a past incident was caused by an unknown flag being silently swallowed."""
         with pytest.raises(SystemExit) as exc_info:
-            # parse_args() raises SystemExit(2) for unknown args
-            sys.argv = ["personal_export.py", "--no-such-flag"]
-            import importlib
-            # Re-invoke the CLI argument parser directly
-            import argparse
-            parser = argparse.ArgumentParser()
-            parser.add_argument("--platform-url", default=pe._DEFAULT_PLATFORM_URL)
-            parser.add_argument("--rcs-path", default=None)
-            parser.add_argument("--output", default="profile.platform.yaml")
-            parser.parse_args(["--no-such-flag"])
+            pe._build_parser().parse_args(["--no-such-flag"])
         assert exc_info.value.code == 2
+
+    def test_known_flags_parse_correctly(self):
+        args = pe._build_parser().parse_args(
+            ["--platform-url", "http://x", "--rcs-path", "some/path", "--output", "out.yaml"]
+        )
+        assert args.platform_url == "http://x"
+        assert args.rcs_path == "some/path"
+        assert args.output == "out.yaml"
+
+
+# ---------------------------------------------------------------------------
+# export() must refuse to overwrite the user's own profile.yaml
+# ---------------------------------------------------------------------------
+
+class TestExportRefusesToOverwriteProfileYaml:
+    def _refused(self, monkeypatch, tmp_path, output_name):
+        monkeypatch.setenv("GUIDE_KIT_PLATFORM_TOKEN", "testtoken")
+        target = tmp_path / output_name
+        target.write_text("rcs:\n  W: 5\n# user's own declared profile\n", encoding="utf-8")
+        with patch.object(pe, "fetch_stage", return_value=(3, "Профессионал", None)):
+            code = pe.export("http://x", None, str(target))
+        assert code == 1
+        assert target.read_text(encoding="utf-8") == "rcs:\n  W: 5\n# user's own declared profile\n"
+
+    def test_refuses_exact_name(self, monkeypatch, tmp_path):
+        self._refused(monkeypatch, tmp_path, "profile.yaml")
+
+    def test_refuses_regardless_of_case(self, monkeypatch, tmp_path):
+        """macOS/Windows default filesystems are case-insensitive — a
+        case-sensitive check alone would let --output PROFILE.YAML silently
+        bypass the guard on the exact platforms this tool ships for."""
+        self._refused(monkeypatch, tmp_path, "PROFILE.YAML")
 
 
 # ---------------------------------------------------------------------------

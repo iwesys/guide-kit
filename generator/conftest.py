@@ -1,5 +1,5 @@
 """
-conftest.py — CI zero-upload guard for generator/ tests (WP-483 Phase 5).
+conftest.py — CI zero-upload guard for generator/ tests.
 
 Any real (non-loopback) socket connection fails the entire test session.
 This prevents PII from accidentally reaching external services in CI.
@@ -17,7 +17,7 @@ def _guard_connect(self, address, *args, **kwargs):
     if host not in _LOOPBACK:
         raise AssertionError(
             f"ZERO-UPLOAD GUARD: non-loopback connect to {address!r} blocked "
-            "(WP-483 Ф5 invariant: no real network in tests)"
+            "(no real network calls are allowed in this test suite — mock the transport)"
         )
     return _original_connect(self, address, *args, **kwargs)
 

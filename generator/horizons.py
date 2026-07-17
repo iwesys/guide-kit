@@ -54,16 +54,17 @@ def normalize_rcs_dict(d: dict) -> dict:
     from_dict() reuses this function so the key-mapping table is never duplicated.
     """
     if "worldview" not in d:
-        # Already compact (or aliases only) — rename known aliases, drop unknowns
+        # Already compact (or aliases only) — rename known aliases, drop unknowns.
+        # Aliases are applied first, then canonical keys always overwrite them —
+        # so when both an alias and its canonical key are present, the canonical
+        # key wins deterministically regardless of dict iteration order.
         result: dict = {}
+        _ALIAS_TO_CANONICAL = {"stage": "stage_derived", "it_level": "IT", "agency": "A"}
+        for alias, canonical in _ALIAS_TO_CANONICAL.items():
+            if alias in d:
+                result[canonical] = d[alias]
         for k, v in d.items():
-            if k == "stage":
-                result["stage_derived"] = v
-            elif k == "it_level":
-                result["IT"] = v
-            elif k == "agency":
-                result["A"] = v
-            elif k in _COMPACT_KEYS:
+            if k in _COMPACT_KEYS:
                 result[k] = v
         return result
 

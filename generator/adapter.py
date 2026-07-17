@@ -31,6 +31,7 @@ from horizons import (
     QuarterFocus,
     RCSProfile,
     WeekHypothesis,
+    normalize_rcs_dict,
 )
 from onboarding_ctas import render_onboarding_ctas
 from planner import plan_horizon
@@ -38,6 +39,17 @@ from work_section import render_work_section
 from llm_backends import GenerationContext, PromptSpec, generate as llm_generate
 
 logger = logging.getLogger(__name__)
+
+# Source authority order: lower value = higher priority (manual wins over everything)
+_SOURCE_PRIORITY: dict[str, int] = {
+    "manual": 0,
+    "computed_from_events": 1,
+    "diagnostic_session": 2,
+}
+_PRIORITY_TO_SOURCE = {v: k for k, v in _SOURCE_PRIORITY.items()}
+
+# RCS slots that participate in per-field merge (source is computed separately)
+_RCS_MERGE_SLOTS = ("W", "M1", "M2", "M3", "M4", "IT", "A", "bottleneck", "stage_derived", "confidence")
 
 _GENERATOR_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PROMPT_PATH = os.path.join(_GENERATOR_DIR, "prompt.md")
@@ -89,6 +101,112 @@ def load_profile(profile_path: str) -> dict:
         logger.info("no profile at %r — cold start (empty profile)", profile_path)
         return {}
     return _read_yaml(profile_path)
+
+
+def _merge_rcs(declared_rcs: dict, overlay_rcs: dict) -> dict:
+    """Per-field merge of declared and platform overlay RCS dicts (WP-483 Phase 5).
+
+    Priority: manual > computed_from_events > diagnostic_session.
+    Overlay never deletes a declared key. Final source = max authority of used fields.
+    """
+    declared_source = declared_rcs.get("source") or ""
+    if not declared_source:
+        import sys as _sys
+        print(
+            "WARNING: declared rcs.source is missing — treating as 'manual'",
+            file=_sys.stderr,
+        )
+        declared_source = "manual"
+
+    overlay_source = overlay_rcs.get("source", "computed_from_events")
+    declared_pri = _SOURCE_PRIORITY.get(declared_source, 0)
+    overlay_pri = _SOURCE_PRIORITY.get(overlay_source, 1)
+
+    merged = dict(declared_rcs)
+    declared_merged = False
+    overlay_merged = False
+
+    for slot in _RCS_MERGE_SLOTS:
+        in_declared = slot in declared_rcs
+        in_overlay = slot in overlay_rcs
+
+        if not in_overlay:
+            if in_declared:
+                declared_merged = True
+            continue
+
+        if not in_declared:
+            merged[slot] = overlay_rcs[slot]
+            overlay_merged = True
+            logger.info("rcs.%s filled from platform: %r", slot, overlay_rcs[slot])
+            continue
+
+        # Both present — lower priority number wins; tie goes to declared
+        if declared_pri <= overlay_pri:
+            declared_merged = True
+            logger.info(
+                "rcs.%s overlay ignored (declared %s >= platform %s): declared=%r",
+                slot, declared_source, overlay_source, declared_rcs[slot],
+            )
+        else:
+            merged[slot] = overlay_rcs[slot]
+            overlay_merged = True
+            logger.info(
+                "rcs.%s overridden by platform: %r → %r",
+                slot, declared_rcs.get(slot), overlay_rcs[slot],
+            )
+
+    # Final source = max authority (min priority number) of fields actually written
+    if declared_merged and overlay_merged:
+        min_pri = min(declared_pri, overlay_pri)
+    elif overlay_merged:
+        min_pri = overlay_pri
+    elif declared_merged:
+        min_pri = declared_pri
+    else:
+        min_pri = declared_pri
+    merged["source"] = _PRIORITY_TO_SOURCE.get(min_pri, declared_source)
+
+    return merged
+
+
+def apply_platform_overlay(profile: dict, profile_path: str) -> dict:
+    """Merge profile.platform.yaml into the profile dict if it exists.
+
+    Per-field merge on rcs and mastery_by_area only. Returns a new dict;
+    does not mutate the caller's profile. A missing overlay file is not an error.
+    """
+    overlay_path = os.path.join(
+        os.path.dirname(os.path.abspath(profile_path)), "profile.platform.yaml"
+    )
+    if not os.path.isfile(overlay_path):
+        return profile
+
+    overlay = _read_yaml(overlay_path)
+    if not overlay:
+        return profile
+
+    profile = dict(profile)
+
+    overlay_rcs = overlay.get("rcs") or {}
+    if overlay_rcs:
+        declared_rcs_raw = profile.get("rcs") or {}
+        declared_rcs = normalize_rcs_dict(declared_rcs_raw)
+        overlay_rcs_compact = dict(overlay_rcs)  # overlay already uses compact keys
+        profile["rcs"] = _merge_rcs(declared_rcs, overlay_rcs_compact)
+
+    overlay_mastery = overlay.get("mastery_by_area") or {}
+    if overlay_mastery:
+        declared_mastery = dict(profile.get("mastery_by_area") or {})
+        for k, v in overlay_mastery.items():
+            if k not in declared_mastery:
+                declared_mastery[k] = v
+                logger.info("mastery_by_area.%s filled from platform: %r", k, v)
+            else:
+                logger.info("mastery_by_area.%s overlay ignored (declared present)", k)
+        profile["mastery_by_area"] = declared_mastery
+
+    return profile
 
 
 def load_card_content(element_id: str | None, cards_path: str | None) -> dict | None:
@@ -280,6 +398,11 @@ def generate_daily_plan(
         os.environ["GUIDE_KIT_CURRICULUM_PATH"] = curriculum_path
 
     profile = load_profile(profile_path)
+
+    personal_export_on = str(config.get("personal_export", "on")).lower() != "off"
+    if personal_export_on:
+        profile = apply_platform_overlay(profile, profile_path)
+
     ctx = build_horizon_context(profile)
     planner_result = plan_horizon(ctx, seed=seed)
 

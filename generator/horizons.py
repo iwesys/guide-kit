@@ -31,6 +31,57 @@ SLOT_LABELS: dict[str, str] = {
 
 _ALL_SLOTS = ("W", "M1", "M2", "M3", "M4", "IT", "A")
 
+# Compact key names recognized by RCSProfile
+_COMPACT_KEYS = frozenset({
+    "W", "M1", "M2", "M3", "M4", "IT", "A",
+    "bottleneck", "stage_derived", "source", "confidence",
+})
+
+# Full-format (WP-151) sub-keys under "mastery" → compact names
+_MASTERY_SUB = {
+    "m1_focus": "M1",
+    "m2_iwe": "M2",
+    "m3_domain": "M3",
+    "m4_systems": "M4",
+}
+
+
+def normalize_rcs_dict(d: dict) -> dict:
+    """Normalize any RCS dict (full or compact format) to compact keys.
+
+    Compact key set: W, M1-M4, IT, A, bottleneck, stage_derived, source, confidence.
+    Only keys actually present in *d* appear in the output — no defaults are injected.
+    from_dict() reuses this function so the key-mapping table is never duplicated.
+    """
+    if "worldview" not in d:
+        # Already compact (or aliases only) — rename known aliases, drop unknowns
+        result: dict = {}
+        for k, v in d.items():
+            if k == "stage":
+                result["stage_derived"] = v
+            elif k == "it_level":
+                result["IT"] = v
+            elif k == "agency":
+                result["A"] = v
+            elif k in _COMPACT_KEYS:
+                result[k] = v
+        return result
+
+    # Full format (WP-151 Phase 12)
+    mastery = d.get("mastery") or {}
+    result = {"W": d["worldview"]}
+    for sub, compact in _MASTERY_SUB.items():
+        if sub in mastery:
+            result[compact] = mastery[sub]
+    if "it_level" in d:
+        result["IT"] = d["it_level"]
+    if "agency" in d:
+        result["A"] = d["agency"]
+    for k in ("bottleneck", "stage_derived", "source", "confidence"):
+        if k in d:
+            result[k] = d[k]
+    return result
+
 
 @dataclass
 class RCSProfile:
@@ -52,36 +103,19 @@ class RCSProfile:
     @classmethod
     def from_dict(cls, d: dict) -> "RCSProfile":
         """Build from a dict. Supports both the full and the compact format."""
-        if "worldview" in d:
-            # Full format (WP-151 Phase 12)
-            mastery = d.get("mastery", {})
-            return cls(
-                W=int(d.get("worldview", 1)),
-                M1=int(mastery.get("m1_focus", 1)),
-                M2=int(mastery.get("m2_iwe", 1)),
-                M3=int(mastery.get("m3_domain", 1)),
-                M4=int(mastery.get("m4_systems", 1)),
-                IT=int(d.get("it_level", 1)),
-                A=int(d.get("agency", 1)),
-                bottleneck=str(d.get("bottleneck", "M1")),
-                stage_derived=int(d.get("stage_derived", 1)),
-                source=str(d.get("source", "manual")),
-                confidence=float(d.get("confidence", 0.0)),
-            )
-        # Compact format (render-pilot-guides.py)
-        stage = int(d.get("stage", d.get("stage_derived", 1)))
+        c = normalize_rcs_dict(d)
         return cls(
-            W=int(d.get("W", 1)),
-            M1=int(d.get("M1", 1)),
-            M2=int(d.get("M2", 1)),
-            M3=int(d.get("M3", 1)),
-            M4=int(d.get("M4", 1)),
-            IT=int(d.get("IT", d.get("it_level", 1))),
-            A=int(d.get("A", d.get("agency", 1))),
-            bottleneck=str(d.get("bottleneck", "M1")),
-            stage_derived=stage,
-            source=str(d.get("source", "manual")),
-            confidence=float(d.get("confidence", 0.0)),
+            W=int(c.get("W", 1)),
+            M1=int(c.get("M1", 1)),
+            M2=int(c.get("M2", 1)),
+            M3=int(c.get("M3", 1)),
+            M4=int(c.get("M4", 1)),
+            IT=int(c.get("IT", 1)),
+            A=int(c.get("A", 1)),
+            bottleneck=str(c.get("bottleneck", "M1")),
+            stage_derived=int(c.get("stage_derived", 1)),
+            source=str(c.get("source", "manual")),
+            confidence=float(c.get("confidence", 0.0)),
         )
 
     def weakest_slots(self, n: int = 2) -> list[str]:

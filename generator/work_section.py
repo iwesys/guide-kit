@@ -46,15 +46,19 @@ _DAYPLAN_ROW_RE = re.compile(
     r"^\|\s*(?P<traffic>[🔴🟡🟢⚪⚫])\s*\|\s*(?P<tvs>[ВТС])\s*\|\s*(?P<num>[^|]+?)\s*\|"
     r"\s*(?P<title>[^|]+?)\s*\|\s*(?P<hours>[^|]+?)\s*\|\s*(?P<status>[^|]+?)\s*\|\s*$"
 )
-# The DayPlan's "#" column holds a bare number ("483"), not "WP-483" — the
-# "РП" column carries the title. An optional WP- prefix is tolerated in case
-# a future DayPlan revision spells it out.
+# The "#" column is a sequential display-order number ("1", "2", …), not the
+# WP number — verified against a real DayPlan during the security-gate
+# walkthrough, contradicting an earlier (untested-against-real-data)
+# assumption that it held the bare WP number. The identity lives in the
+# "РП" column instead, as the bold **WP-{N}** prefix (formatting.md: active
+# rows are bold, done rows are struck through — see below).
 _WP_NUM_RE = re.compile(r"^~*(?:WP-?)?(\d+)~*$", re.IGNORECASE)
 
-# "done" appears as a bare word, with a parenthetical ("done (Ф2 решено...)"),
-# or with a leading checkmark and em-dash detail ("✅ done — Ф5-Ф6 ...") across
-# real DayPlan history — never as a substring of an unrelated status word.
-_DONE_STATUS_RE = re.compile(r"^(?:[^\w\s]\s*)?done\b", re.IGNORECASE)
+# formatting.md: active rows have a **bold** title; done rows are entirely
+# struck through (~~...~~), not bold — so a title that isn't bold-wrapped is
+# never an active row, regardless of what the status column's wording is
+# (observed values include "in_progress"/"pending" for active rows and a
+# bare "✅" for done ones — no reliable literal "done" substring to match).
 
 
 def _load_type_index(base: str) -> dict:
@@ -106,34 +110,36 @@ def build_generic_section(base: str) -> tuple[str, list[dict]]:
 
 
 def _parse_dayplan_rows(text: str) -> list[dict]:
-    """Extracts non-done RP rows from a DayPlan's "План на сегодня" table.
+    """Extracts active RP rows from a DayPlan's "План на сегодня" table.
 
     Count-aware: only rows matching the six-column shape are considered —
     unrelated tables elsewhere in the file (e.g. "Разбор заметок") don't
     match the column count/labels and are silently skipped, not misread.
+
+    A row counts as an active RP row only if its title is bold-wrapped
+    **WP-{N}** — the one identity marker formatting.md guarantees for active
+    rows. Non-RP rows (e.g. "Саморазвитие") and done rows (struck through,
+    not bold) both fail this the same way, so no separate status-word check
+    is needed — and none would be reliable: observed status values include
+    "in_progress"/"pending" for active rows and a bare "✅" for done ones.
     """
     rows = []
     for line in text.splitlines():
         m = _DAYPLAN_ROW_RE.match(line.strip())
         if not m:
             continue
-        num_raw = m.group("num").strip()
         status = m.group("status").strip()
-        wp_match = _WP_NUM_RE.match(num_raw)
-        if not wp_match:
-            continue  # "—" (non-RP row, e.g. "Саморазвитие") or a header/separator line
-        if _DONE_STATUS_RE.match(status):
-            continue
         title_raw = m.group("title").strip()
         bold_match = re.match(r"^\*\*(.+?)\*\*\s*(?:—\s*(.*))?$", title_raw)
-        if bold_match:
-            title, context = bold_match.group(1), (bold_match.group(2) or "").strip()
-        else:
-            title, context = title_raw, ""
+        if not bold_match:
+            continue
+        wp_match = _WP_NUM_RE.match(bold_match.group(1).strip())
+        if not wp_match:
+            continue  # bold title that isn't a WP-{N} marker
         rows.append({
             "wp": wp_match.group(1),
-            "title": title,
-            "context": context,
+            "title": bold_match.group(1).strip(),
+            "context": (bold_match.group(2) or "").strip(),
             "status": status,
         })
     return rows

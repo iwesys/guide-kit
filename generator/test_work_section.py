@@ -93,51 +93,57 @@ class TestIweSection:
 
     def test_date_template_is_resolved_against_today(self, base):
         import datetime
-        rel = _write_dayplan(base, "| 🟡 | Т | 401 | **GitHub-орги** — Ф6.1 | 3 | in_progress |\n",
+        rel = _write_dayplan(base, "| 🟡 | Т | 1 | **WP-401** — GitHub-орги, Ф6.1 | 3 | in_progress |\n",
                               rel=f"current/DayPlan {datetime.date.today().isoformat()}.md")
         markdown, _ = build_iwe_section(base, "current/DayPlan {date}.md")
         assert "GitHub-орги" in markdown
         assert rel.endswith(f"{datetime.date.today().isoformat()}.md")
 
     def test_literal_path_without_placeholder_is_used_as_is(self, base):
-        rel = _write_dayplan(base, "| 🟡 | Т | 401 | **GitHub-орги** — Ф6.1 | 3 | in_progress |\n",
+        rel = _write_dayplan(base, "| 🟡 | Т | 1 | **WP-401** — GitHub-орги, Ф6.1 | 3 | in_progress |\n",
                               rel="current/fixed-name.md")
         markdown, _ = build_iwe_section(base, rel)
         assert "GitHub-орги" in markdown
 
     def test_extracts_non_done_rows(self, base):
+        # The "#" column is a sequential display-order number, not the WP
+        # number — real DayPlans carry the identity in the bold **WP-{N}**
+        # title (verified live during the security-gate walkthrough that
+        # preceded enabling this feature; an earlier version of this fixture
+        # matched a wrong same-session assumption that the "#" column held it).
         rows = (
-            "| 🔴 | В | 483 | **guide-kit** — итог прогона; решение пилота | 1 | needs-decision |\n"
-            "| 🟡 | Т | ~~476~~ | ~~ЖЦ данных~~ — закрыта | 1 | done |\n"
+            "| 🔴 | В | 1 | **WP-483** — guide-kit: итог прогона; решение пилота | 1 | needs-decision |\n"
+            "| 🟡 | Т | 2 | ~~WP-476~~ — ЖЦ данных, закрыта | 1 | done |\n"
             "| ⚪ | Т | — | **Саморазвитие** — D-055 | 1 | pending |\n"
         )
         rel = _write_dayplan(base, rows)
         markdown, log = build_iwe_section(base, rel)
         assert "guide-kit" in markdown
-        assert "ЖЦ данных" not in markdown  # done row excluded
-        assert "Саморазвитие" not in markdown  # non-RP row (# = "—") excluded
+        assert "ЖЦ данных" not in markdown  # struck-through title (done) excluded
+        assert "Саморазвитие" not in markdown  # bold but not a WP-{N} title
         assert len(log) == 1
 
-    def test_done_status_variants_are_all_excluded(self, base):
-        """Real DayPlan history (archive/day-plans/) writes "done" as a bare word,
-        with a parenthetical, or with a leading checkmark + em-dash detail —
-        never just the literal string "done" (found during code review)."""
+    def test_struck_through_titles_are_excluded_regardless_of_status_wording(self, base):
+        """Done-ness is read from the title's own strikethrough (formatting.md
+        convention: active rows are bold, done rows are struck through), not
+        from the status column's wording — real DayPlan status values are
+        inconsistent ("in_progress"/"pending" for active rows, a bare "✅"
+        for done ones — no reliable literal "done" substring to match)."""
         rows = (
-            "| 🟡 | Т | 101 | **A** — bare | 1 | done |\n"
-            "| 🟡 | Т | 102 | **B** — paren | 1 | done (Ф2 решено) |\n"
-            "| 🟡 | Т | 103 | **C** — checkmark | 1 | ✅ done — Ф5-Ф6 задеплоено |\n"
-            "| 🟡 | Т | 104 | **D** — still active | 1 | in_progress |\n"
+            "| 🟡 | Т | 1 | ~~WP-201~~ — struck, status still says active | 1 | in_progress |\n"
+            "| 🟡 | Т | 2 | ~~WP-202~~ — struck, checkmark status | 1 | ✅ |\n"
+            "| 🟡 | Т | 3 | **WP-203** — still active | 1 | in_progress |\n"
         )
         rel = _write_dayplan(base, rows)
         markdown, log = build_iwe_section(base, rel)
-        assert "still active" in markdown
-        for excluded in ("bare", "paren", "checkmark"):
-            assert excluded not in markdown
+        assert "WP-203" in markdown
+        assert "WP-201" not in markdown
+        assert "WP-202" not in markdown
         assert len(log) == 1
-        assert log[0]["value"] == "104"
+        assert log[0]["value"] == "203"
 
     def test_context_after_em_dash_is_kept(self, base):
-        rows = "| 🟡 | Т | 401 | **GitHub-орги** — Ф6.1 Волна 1: разделение | 3 | in_progress |\n"
+        rows = "| 🟡 | Т | 1 | **WP-401** — GitHub-орги, Ф6.1 Волна 1: разделение | 3 | in_progress |\n"
         rel = _write_dayplan(base, rows)
         markdown, _ = build_iwe_section(base, rel)
         assert "Ф6.1 Волна 1" in markdown
@@ -146,14 +152,14 @@ class TestIweSection:
         os.makedirs(os.path.join(base, "inbox", "WP-401"))
         with open(os.path.join(base, "inbox", "WP-401", "WP-401.md"), "w", encoding="utf-8") as fh:
             fh.write("---\nwp: 401\n---\n")
-        rows = "| 🟡 | Т | 401 | **GitHub-орги** — Ф6.1 | 3 | in_progress |\n"
+        rows = "| 🟡 | Т | 1 | **WP-401** — GitHub-орги, Ф6.1 | 3 | in_progress |\n"
         rel = _write_dayplan(base, rows)
         markdown, log = build_iwe_section(base, rel)
         assert "inbox/WP-401/WP-401.md" in markdown
         assert log[0]["note"] is None
 
     def test_no_link_when_wp_file_absent(self, base):
-        rows = "| 🟡 | Т | 999 | **Несуществующий РП** — контекст | 1 | pending |\n"
+        rows = "| 🟡 | Т | 1 | **WP-999** — контекст | 1 | pending |\n"
         rel = _write_dayplan(base, rows)
         markdown, log = build_iwe_section(base, rel)
         assert "(РП-999)" in markdown
@@ -167,7 +173,7 @@ class TestIweSection:
         os.makedirs(dayplan_dir)
         dayplan_file = dayplan_dir / "DayPlan.md"
         dayplan_file.write_text(
-            _DAYPLAN_HEADER + "| 🟡 | Т | 401 | **GitHub-орги** — Ф6.1 | 3 | in_progress |\n",
+            _DAYPLAN_HEADER + "| 🟡 | Т | 1 | **WP-401** — GitHub-орги, Ф6.1 | 3 | in_progress |\n",
             encoding="utf-8",
         )
         markdown, _ = build_iwe_section(base, str(dayplan_file))
@@ -177,7 +183,7 @@ class TestIweSection:
         """A differently-shaped table elsewhere in the file (e.g. "Разбор заметок")
         must not be picked up just because it also uses pipes."""
         rows = (
-            "| 🟡 | Т | 401 | **GitHub-орги** — Ф6.1 | 3 | in_progress |\n"
+            "| 🟡 | Т | 1 | **WP-401** — GitHub-орги, Ф6.1 | 3 | in_progress |\n"
             "\n"
             "| Заметка | Тип | Предложение | ✅ |\n"
             "|---------|-----|-------------|---|\n"

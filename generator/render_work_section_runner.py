@@ -1,5 +1,5 @@
-"""Standalone acceptance runner for the work-section feature (WP-483 MVP
-acceptance, P.3 "main scenario"). Imports ONLY work_section.render_work_section
+"""Standalone acceptance runner for the work-section feature (MVP
+acceptance, "main scenario"). Imports ONLY work_section.render_work_section
 — never adapter.py or llm_backends — so this tool cannot make an LLM call or
 touch a platform token by construction, not by promise. Safe to run directly
 against a pilot's real base_path for a read-only accuracy check.

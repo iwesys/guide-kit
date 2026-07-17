@@ -1,4 +1,4 @@
-"""OpenAI-compatible Chat Completions backend (guide-kit, WP-483 Phase 1).
+"""OpenAI-compatible Chat Completions backend (guide-kit).
 
 User supplies base_url + api_key — any server implementing the Chat
 Completions shape qualifies (OpenAI itself, most third-party proxies).

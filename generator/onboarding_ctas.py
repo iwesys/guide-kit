@@ -1,12 +1,12 @@
 """
-onboarding_ctas.py — the two optional invitation blocks (WP-483 Phase 3).
+onboarding_ctas.py — the two optional invitation blocks.
 
 Renders a static markdown appendix to the generated guide: an invitation to
 connect to the hosted platform, and an invitation to adopt the full IWE
 template. Both are pure text — this module holds no onboarding state and
 makes no branching decision on the user's behalf. The next onboarding step
 is always something the platform itself answers; this module never guesses
-it (lesson from WP-262/WP-406: a locally duplicated onboarding state machine
+it (lesson learned the hard way: a locally duplicated onboarding state machine
 drifts from the platform's and rots).
 
 An explicitly blanked-out platform_connect_url (config sets it to "") degrades

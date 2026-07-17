@@ -1,5 +1,5 @@
 """
-personal_export.py — platform pull client for guide-kit (WP-483 Phase 5).
+personal_export.py — platform pull client for guide-kit.
 
 Fetches derived RCS profile and qualification stage from the IWE platform
 via JSON-RPC 2.0 MCP transport. Writes profile.platform.yaml (compact keys

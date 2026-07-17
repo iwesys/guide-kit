@@ -1,6 +1,6 @@
 """
 residency.py — guide-kit structurer: local consent check for the Structurer's
-own read access to a data category (peer-session 2026-07-15, WP-483 Phase 2).
+own read access to a data category.
 
 Answers exactly one question: "may the Structurer (function_id=structurer,
 flow_direction=inbound) read files the classifier assigns to this

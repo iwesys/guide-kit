@@ -1,4 +1,4 @@
-"""Local LLM backend (guide-kit, WP-483 Phase 1).
+"""Local LLM backend (guide-kit).
 
 Not a separate protocol: an abstract interface over "some OpenAI-compatible
 server on localhost" — MLX server (see the /local-llm skill), llama.cpp

@@ -1,6 +1,5 @@
 """
-work_section.py — the "Работа" slot in the daily guide (WP-483 Phase 4,
-Professional role, CONCEPT-full-architecture.md §3-4 Step 3b).
+work_section.py — the "Работа" slot in the daily guide (Professional role).
 
 Read-only: this module imports nothing that writes, and never touches the
 files it lists — a person edits their own work products in their own

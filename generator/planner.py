@@ -1,13 +1,13 @@
 """
-Tailor (R27) — deterministic planner.
+Deterministic lesson planner.
 SOP MIM.SOP.001 steps 1-4: choose area, impact type, element, depth.
 
 Input contract: PD.SPEC.001
 Output contract: LessonPlan — passed to prompt.md (steps 5-6)
 
-guide-kit fork (WP-483 Phase 1): a portable copy of agents/tailor/planner.py.
+guide-kit: a portable copy of the original platform planner.
 Selection logic is unchanged — only the platform-specific logging import and the
-hardcoded path to DS-principles-curriculum were cut (see GUIDE_KIT_CURRICULUM_PATH below).
+hardcoded path to the curriculum repo were cut (see GUIDE_KIT_CURRICULUM_PATH below).
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ STAGE_WORLDVIEW_PROB: dict[int, float] = {
 }
 
 # Narrative arc: stage (0-4 in code = 1-5 in the Pack) → (narrative_phase, worldview_arc)
-# Source-of-truth: PD.FORM.080 §3 + PD.FORM.087 §5. WP-245 Phase 6
+# Source-of-truth: PD.FORM.080 §3 + PD.FORM.087 §5
 STAGE_NARRATIVE: dict[int, tuple[str, str]] = {
     1: ("Я могу меняться", "Я могу меняться"),                          # stage 1, Random
     2: ("Я — система", "Я — система"),                                  # stage 2, Practicing
@@ -770,7 +770,7 @@ def plan(tailor_context: dict, seed: int | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tailor-2: plan_horizon() — horizon-aware planner (WP-149 Phase 9)
+# plan_horizon() — horizon-aware planner
 # ---------------------------------------------------------------------------
 
 # RCS slot → FORM.081 area and impact type mapping
@@ -852,7 +852,7 @@ def _rcs_to_tailor_context_dict(ctx: "HorizonContext") -> dict:
 
 
 def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
-    """Tailor-2: horizon-aware planner (WP-149 Phase 9).
+    """Horizon-aware planner.
 
     Input: HorizonContext (RCS + 4 horizons + trigger)
     Output: a dict with keys {mode, plan_skeleton, horizon_context, context_for_llm,
@@ -867,7 +867,7 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
     - Orchestrator trigger → state, energy, tomatoes
     - The horizon cascade is passed to the LLM explicitly, for the narrative
 
-    mastery_by_area comes from ctx.mastery_by_area (Phase 4.1, WP-203).
+    mastery_by_area comes from ctx.mastery_by_area.
     recent_history stays [] — the domain_event → RecentLesson conversion is deferred.
     """
     from horizons import HorizonContext
@@ -893,7 +893,7 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
     mastery_gaps = list(ctx.month.methods) if ctx.month.methods else []
 
     # Choose the element through the planner's existing functions
-    # mastery_by_area from Memory.Derived (Phase 4.1, WP-203) — activates _mastery_gate
+    # mastery_by_area from Memory.Derived — activates _mastery_gate
     mastery_by_area = getattr(ctx, "mastery_by_area", {}) or {}
     recent_ids: set[str] = set()
     if impact_type == "worldview":

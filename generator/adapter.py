@@ -1,7 +1,7 @@
 """
-adapter.py — guide-kit generator adapter (WP-483 Phase 1).
+adapter.py — guide-kit generator adapter.
 
-Bridges a user's profile.yaml (WP-476 axes 2.1-2.4) to the deterministic
+Bridges a user's profile.yaml (the 2.1-2.4 data-lifecycle axes) to the deterministic
 planner (planner.py + horizons.py) and a configurable LLM backend, producing
 either a markdown plan or a diagnostic failure report — never a silently
 invented fact (hard-fail policy, see policies/default.yaml).
@@ -62,7 +62,7 @@ DEFAULT_POLICY_PATH = os.path.join(_GENERATOR_DIR, "policies", "default.yaml")
 
 def _read_yaml(path: str) -> dict:
     """Reads a YAML file. A syntactically broken file gets the same partial-tolerance
-    treatment as a missing one: log + empty, not a crash (WP-483 Phase 1, post-implementation review)."""
+    treatment as a missing one: log + empty, not a crash."""
     try:
         with open(path, encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
@@ -104,7 +104,7 @@ def load_profile(profile_path: str) -> dict:
 
 
 def _merge_rcs(declared_rcs: dict, overlay_rcs: dict) -> dict:
-    """Per-field merge of declared and platform overlay RCS dicts (WP-483 Phase 5).
+    """Per-field merge of declared and platform overlay RCS dicts.
 
     Priority: manual > computed_from_events > diagnostic_session.
     Overlay never deletes a declared key. Final source = max authority of used fields.
@@ -234,7 +234,7 @@ def _from_dict_safe(cls, d: dict):
 
 
 def build_horizon_context(profile: dict) -> HorizonContext:
-    """profile.yaml (2.1-2.4, WP-476) → HorizonContext. An empty profile → RCSProfile() + empty horizons."""
+    """profile.yaml (2.1-2.4 axes) → HorizonContext. An empty profile → RCSProfile() + empty horizons."""
     rcs_dict = profile.get("rcs") or {}
     rcs = RCSProfile.from_dict(rcs_dict) if rcs_dict else RCSProfile()
     trigger_dict = profile.get("trigger") or {}
@@ -256,7 +256,7 @@ def build_horizon_context(profile: dict) -> HorizonContext:
 
 
 # ---------------------------------------------------------------------------
-# decision_log + hard-fail gate (WP-483 Phase 1, peer-session turn 3-4)
+# decision_log + hard-fail gate
 # ---------------------------------------------------------------------------
 
 def build_decision_log(planner_result: dict, llm_ok: bool, timestamp: str) -> list[dict]:
@@ -343,12 +343,12 @@ def render_markdown(
     onboarding_appendix: str = "",
     work_section_markdown: str = "",
 ) -> str:
-    """work_section_markdown (WP-483 Phase 4) sits in the body, after the visible
+    """work_section_markdown sits in the body, after the visible
     plan and before onboarding_appendix — unlike the appendix, it DOES carry
     provenance (each listed item has a decision_log entry), so it belongs among
     the guide's regular content, not after it.
 
-    onboarding_appendix (WP-483 Phase 3) sits after everything else and before
+    onboarding_appendix sits after everything else and before
     the decision_log comment — it carries no provenance and is outside the
     hard-fail gate, so it does not belong inside decision_log itself."""
     lines = ["# План на сегодня", "", narrative, "", "## Задания"]
@@ -498,7 +498,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
-    parser = argparse.ArgumentParser(description="guide-kit generator adapter (WP-483 Phase 1)")
+    parser = argparse.ArgumentParser(description="guide-kit generator adapter")
     parser.add_argument("--profile", default="profile.yaml")
     parser.add_argument("--config", default="guide-kit.config.yaml")
     parser.add_argument("--policy", default=None)

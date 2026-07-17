@@ -1,11 +1,10 @@
 """
-agents/tailor/horizons.py — Types for Tailor-2 (horizon cascade + RCS input).
-# see WP-149 Phase 11, WP-203 Phase 1.5
+horizons.py — types for the horizon-aware planner (horizon cascade + RCS input).
 
 Contains only data types — selection business logic lives in planner.py.
 
 Two input formats for RCS:
-  - full (WP-151 Phase 12): {worldview: N, mastery: {m1_focus: N, ...}, it_level: N, agency: N}
+  - full: {worldview: N, mastery: {m1_focus: N, ...}, it_level: N, agency: N}
   - compact (render-pilot-guides.py): {W: N, M1: N, M2: N, M4: N, stage: N}
 """
 
@@ -37,7 +36,7 @@ _COMPACT_KEYS = frozenset({
     "bottleneck", "stage_derived", "source", "confidence",
 })
 
-# Full-format (WP-151) sub-keys under "mastery" → compact names
+# Full-format sub-keys under "mastery" → compact names
 _MASTERY_SUB = {
     "m1_focus": "M1",
     "m2_iwe": "M2",
@@ -68,7 +67,7 @@ def normalize_rcs_dict(d: dict) -> dict:
                 result[k] = v
         return result
 
-    # Full format (WP-151 Phase 12)
+    # Full format
     mastery = d.get("mastery") or {}
     result = {"W": d["worldview"]}
     for sub, compact in _MASTERY_SUB.items():
@@ -136,7 +135,7 @@ class RCSProfile:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Orchestrator triggers (WP-203 Phase 1.5)
+# Orchestrator triggers
 # ─────────────────────────────────────────────────────────────────────────────
 
 TriggerKind = Literal[
@@ -207,19 +206,19 @@ class DayEvents:
 
 @dataclass
 class ArtifactsSummary:
-    """What the user created over the period (from the WP-109 classifier)."""
+    """What the user created over the period (from the artifact classifier)."""
     count: int = 0
     by_type: dict[str, int] = field(default_factory=dict)    # {artifact_type: count}
     recent_titles: list[str] = field(default_factory=list)   # last N titles
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HorizonContext — Tailor-2's main input
+# HorizonContext — the horizon-aware planner's main input
 # ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class HorizonContext:
-    """Tailor-2's full input (WP-149 Phase 11): RCS + 4 horizons + artifacts + trigger.
+    """The horizon-aware planner's full input: RCS + 4 horizons + artifacts + trigger.
 
     Replaces the flat TailorContext for horizon-aware mode.
     Compatible with the current render-pilot-guides.py via from_render_context().
@@ -265,7 +264,7 @@ class HorizonContext:
     ) -> "HorizonContext":
         """Compatibility constructor for render-pilot-guides.py.
 
-        Used until the Orchestrator (WP-203) is fully implemented.
+        Used until the Orchestrator is fully implemented.
         The quarter/week/day horizons stay empty — planner.py will fill them from RCS.
         """
         rcs = RCSProfile.from_dict(rcs_dict)
@@ -278,7 +277,7 @@ class HorizonContext:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PlanDay — Tailor-2's output
+# PlanDay — the horizon-aware planner's output
 # ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -295,7 +294,7 @@ class DZItem:
 
 @dataclass
 class PlanDay:
-    """Tailor-2's output — daily assignment package + narrative (WP-149 Phase 11).
+    """The horizon-aware planner's output — daily assignment package + narrative.
 
     Replaces plan()'s dict output for horizon-aware mode.
     Compatible: plan() returns a dict, plan_horizon() returns a PlanDay.

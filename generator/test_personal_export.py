@@ -1,5 +1,5 @@
 """
-Tests for personal_export.py and adapter.py merge hook (WP-483 Phase 5).
+Tests for personal_export.py and adapter.py merge hook.
 
 Unit coverage:
 - allowlist rejects write tools before network
@@ -360,7 +360,7 @@ class TestExportIntegration:
         assert data["is_derived"] is True
 
     def test_export_writes_full_bundle_when_stage_and_rcs_both_available(self, tmp_path, monkeypatch):
-        """P.2(a) acceptance (WP-483 MVP acceptance): 'exportable in under an
+        """P.2(a) acceptance (MVP acceptance): 'exportable in under an
         hour' presumes the export is COMPLETE, not just fast — a bundle missing
         half the available data would technically finish quickly while still
         failing the promise. Only prior coverage exercised stage-only or

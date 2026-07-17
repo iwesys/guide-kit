@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# P.1 acceptance check (WP-483, MVP acceptance): a guide assembles end-to-end
+# P.1 acceptance check (MVP acceptance): a guide assembles end-to-end
 # from a throwaway clone of this repo — zero pre-existing local state, zero
 # real LLM calls (stub server on an ephemeral port), zero network egress
 # beyond that stub. Also serves as evidence for P.2(b) "new device <1 day":

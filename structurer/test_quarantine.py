@@ -1,5 +1,5 @@
 """
-test_quarantine.py — guide-kit structurer tests, quarantine slice (WP-483 Phase 2, FORMAT.md §4a).
+test_quarantine.py — guide-kit structurer tests, quarantine slice (FORMAT.md §4a).
 Run: cd structurer && pytest
 """
 from __future__ import annotations

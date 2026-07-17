@@ -1,4 +1,4 @@
-"""Tests for onboarding_ctas.py (WP-483 Phase 3). Run: cd generator && pytest"""
+"""Tests for onboarding_ctas.py. Run: cd generator && pytest"""
 
 from onboarding_ctas import DEFAULT_PLATFORM_CONNECT_URL, render_onboarding_ctas
 

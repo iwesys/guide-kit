@@ -1,5 +1,5 @@
 """
-test_freshness.py — guide-kit structurer tests, freshness slice (WP-483 Phase 2, FORMAT.md §7).
+test_freshness.py — guide-kit structurer tests, freshness slice (FORMAT.md §7).
 Run: cd structurer && pytest
 """
 from __future__ import annotations

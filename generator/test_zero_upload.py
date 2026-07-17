@@ -1,5 +1,5 @@
 """
-Zero-upload invariant tests for guide-kit (WP-483 Phase 5).
+Zero-upload invariant tests for guide-kit.
 
 Three guarantees:
   (1) PII canaries from the fixture profile don't appear in platform-bound payloads.

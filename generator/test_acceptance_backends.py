@@ -1,5 +1,5 @@
 """P.2(c) acceptance test: guide-kit works against open-protocol backends,
-not just the vendor one (WP-483 MVP acceptance, portability promise in
+not just the vendor one (MVP acceptance, portability promise in
 README.md "speak only open protocols").
 
 Real HTTP round-trip against tests/acceptance/stub_llm_server.py on a

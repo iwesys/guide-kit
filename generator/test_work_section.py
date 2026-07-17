@@ -1,4 +1,4 @@
-"""Tests for work_section.py (WP-483 Phase 4). Run: cd generator && pytest"""
+"""Tests for work_section.py. Run: cd generator && pytest"""
 
 import json
 import os

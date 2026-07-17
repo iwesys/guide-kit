@@ -1,8 +1,8 @@
 """
-Tests for horizons.py (WP-149 Phase 11) + plan_horizon() (WP-149 Phase 9).
+Tests for horizons.py + plan_horizon().
 Run: cd generator && pytest
 
-guide-kit fork (WP-483 Phase 1.5): ported from agents/tailor/test_horizons.py,
+guide-kit fork: ported from the original platform test suite,
 the only existing coverage for the core selection logic. Comments translated
 to English per repo convention; assertions and fixtures unchanged.
 """
@@ -42,7 +42,7 @@ class TestRCSProfileFromDict:
         assert abs(rcs.confidence - 0.7) < 1e-9
 
     def test_full_format_wp151(self):
-        """Full format from WP-151 Phase 12."""
+        """Full format."""
         d = {
             "worldview": 3,
             "mastery": {"m1_focus": 4, "m2_iwe": 2, "m3_domain": 3, "m4_systems": 2},
@@ -187,7 +187,7 @@ class TestPlanDay:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# plan_horizon() (WP-149 Phase 9)
+# plan_horizon()
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestPlanHorizon:

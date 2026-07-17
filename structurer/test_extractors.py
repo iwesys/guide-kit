@@ -1,5 +1,5 @@
 """
-test_extractors.py — guide-kit structurer tests, extractors.yaml slice (WP-483 Phase 2, FORMAT.md §6).
+test_extractors.py — guide-kit structurer tests, extractors.yaml slice (FORMAT.md §6).
 Run: cd structurer && pytest
 """
 from __future__ import annotations

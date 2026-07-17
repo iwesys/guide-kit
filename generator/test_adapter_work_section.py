@@ -1,4 +1,4 @@
-"""Tests for adapter.py's work_section wiring (WP-483 Phase 4).
+"""Tests for adapter.py's work_section wiring.
 
 adapter.py itself had no prior test file (render_markdown/generate_daily_plan
 were previously untested) — these cover only the new work_section param and

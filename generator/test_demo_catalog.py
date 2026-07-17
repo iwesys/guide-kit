@@ -1,6 +1,6 @@
 """Exercises the demo catalog (demo/curriculum, demo/cards) end-to-end
 against the real planner/adapter code — not a fixture standing in for it.
-WP-483 Phase 4: closes the gap test_horizons.py already flagged (a portable
+Closes the gap test_horizons.py already flagged (a portable
 core with no curriculum has an untested "CAT.001 actually loaded" branch —
 CI only ever sees the honest-empty path)."""
 

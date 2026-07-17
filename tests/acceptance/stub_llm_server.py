@@ -1,4 +1,4 @@
-"""Minimal OpenAI-compatible Chat Completions stub (guide-kit acceptance, WP-483).
+"""Minimal OpenAI-compatible Chat Completions stub (guide-kit acceptance).
 
 stdlib-only, no real network egress, no API key. Binds an ephemeral port
 (never a hardcoded one — a fixed port on the pilot's machine may already be

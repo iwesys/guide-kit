@@ -1,7 +1,7 @@
 # demo/
 
 Public-domain sample content — enough to run the generator and see a real,
-non-empty guide before you've set up any content of your own (WP-483 Phase 4).
+non-empty guide before you've set up any content of your own.
 
 - **`curriculum/`** — one worldview card (`CAT.001.D1`), same file format as
   the platform's real CAT.001 catalog (frontmatter: `id`, `area`,
@@ -23,4 +23,4 @@ non-empty guide before you've set up any content of your own (WP-483 Phase 4).
 Nothing here is meant to be a complete catalog — see `DP.SC.056`'s
 "no servers, honest provenance" invariant for why the full CAT.001-003
 catalogs stay off this repository (`CONCEPT-portable-guide-generator.md`
-§340, WP-483 Phase 1 "Ключевое отклонение").
+§340 "Ключевое отклонение").

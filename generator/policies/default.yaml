@@ -1,4 +1,4 @@
-# guide-kit default content policy (WP-483 Phase 1).
+# guide-kit default content policy.
 #
 # required_attribution_slots: what must have an honest source in decision_log,
 # or adapter.py hard-fails instead of silently emitting an empty/fabricated
@@ -6,11 +6,11 @@
 #
 # llm_assisted_confidence — a CONSTANT set by the policy author. adapter.py
 # does not compute it and does not take it from the LLM's self-assessment
-# (peer-session WP-483 Phase 1, turn 3-4: an LLM self-assessment would turn
+# (peer-session review: an LLM self-assessment would turn
 # the hard-fail into decoration).
 #
 # Both required slots below allow llm-assisted by default — otherwise a
-# portable profile without a curriculum (Marina/David, WP-289 §4) would
+# portable profile without a curriculum (Marina/David, per the concept's worked examples) would
 # reliably fail every run, and an "honest gap" would turn into a
 # "non-functional product".
 

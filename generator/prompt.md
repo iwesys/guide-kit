@@ -237,7 +237,9 @@ Pick examples matching the dominant role's knowledge type:
 
 ## Output format (strict JSON)
 
-Return **only** the following JSON, no markdown fences, no text before or after:
+Return **only** the following JSON, no markdown fences, no text before or after.
+
+**Language: every user-facing string inside `content` (`retrieval`, `bridge`, `intro`, `core`, `practice`, `reflection`, `it_scaffolding`) and every `lesson_plan.session_goal` MUST be written in Russian** — the lesson is for a Russian-speaking student, regardless of the language of these instructions. `decision_log` entries (internal audit trail, not shown to the student) may stay in whichever language is natural.
 
 ```json
 {

@@ -39,6 +39,16 @@ def main(argv: list[str] | None = None) -> int:
     if not isinstance(config, dict):
         print(f"ERROR: config at {args.config!r} is not a YAML mapping (got {type(config).__name__})", file=sys.stderr)
         return 1
+    # base_path/dayplan_path are the two config values work_section.py actually
+    # consumes as paths/templates (os.path.join, str.format) — a wrong type here
+    # (e.g. a YAML list from a stray indent) would otherwise surface as a raw
+    # TypeError/AttributeError instead of the diagnostic this tool promises
+    # (found by independent verification, 2026-07-17).
+    for key in ("base_path", "dayplan_path"):
+        value = config.get(key)
+        if value is not None and not isinstance(value, str):
+            print(f"ERROR: config key {key!r} must be a string (got {type(value).__name__}: {value!r})", file=sys.stderr)
+            return 1
 
     # Mirrors adapter.py's own call site exactly (generate_daily_plan), so this
     # runner is a faithful proxy for the real work-section behavior, not an

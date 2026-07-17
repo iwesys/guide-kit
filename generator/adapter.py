@@ -34,6 +34,7 @@ from horizons import (
 )
 from onboarding_ctas import render_onboarding_ctas
 from planner import plan_horizon
+from work_section import render_work_section
 from llm_backends import GenerationContext, PromptSpec, generate as llm_generate
 
 logger = logging.getLogger(__name__)
@@ -218,16 +219,29 @@ def apply_hard_fail_gate(decision_log: list[dict], policy: dict) -> tuple[bool, 
 # Markdown rendering
 # ---------------------------------------------------------------------------
 
-def render_markdown(narrative: str, plan_day: list[dict], decision_log: list[dict], onboarding_appendix: str = "") -> str:
-    """onboarding_appendix (WP-483 Phase 3) sits after the visible content and before
-    the decision_log comment — it carries no provenance and is outside the hard-fail
-    gate, so it does not belong inside decision_log itself."""
+def render_markdown(
+    narrative: str,
+    plan_day: list[dict],
+    decision_log: list[dict],
+    onboarding_appendix: str = "",
+    work_section_markdown: str = "",
+) -> str:
+    """work_section_markdown (WP-483 Phase 4) sits in the body, after the visible
+    plan and before onboarding_appendix — unlike the appendix, it DOES carry
+    provenance (each listed item has a decision_log entry), so it belongs among
+    the guide's regular content, not after it.
+
+    onboarding_appendix (WP-483 Phase 3) sits after everything else and before
+    the decision_log comment — it carries no provenance and is outside the
+    hard-fail gate, so it does not belong inside decision_log itself."""
     lines = ["# План на сегодня", "", narrative, "", "## Задания"]
     for item in plan_day:
         label = item.get("label") or item.get("element_id") or "?"
         tomatoes = item.get("tomatoes", 1)
         rationale = item.get("rationale", "")
         lines.append(f"- **{label}** ({tomatoes} помидорок) — {rationale}")
+    if work_section_markdown:
+        lines += ["", work_section_markdown]
     if onboarding_appendix:
         lines += ["", onboarding_appendix]
     lines += ["", "<!-- decision_log:", json.dumps(decision_log, ensure_ascii=False, indent=2), "-->"]
@@ -289,6 +303,13 @@ def generate_daily_plan(
     timestamp = datetime.now(timezone.utc).isoformat()
     decision_log = build_decision_log(planner_result, llm_ok=llm_result.ok, timestamp=timestamp)
 
+    # Rendered and merged into decision_log before the hard-fail gate runs (not
+    # after): apply_hard_fail_gate's by_slot lookup only sees entries already in
+    # decision_log at call time — a future policy requiring the "work_section"
+    # slot would otherwise always fail (found during review).
+    work_section_markdown, work_section_log = render_work_section(config, config.get("base_path") or ".")
+    decision_log.extend(work_section_log)
+
     if not llm_result.ok:
         logger.error("LLM backend %r failed: %s", backend_name, llm_result.error)
         return GuideResult(
@@ -342,7 +363,7 @@ def generate_daily_plan(
         )
 
     onboarding_appendix = render_onboarding_ctas(config)
-    markdown = render_markdown(narrative, plan_day, decision_log, onboarding_appendix)
+    markdown = render_markdown(narrative, plan_day, decision_log, onboarding_appendix, work_section_markdown)
     return GuideResult(ok=True, markdown=markdown)
 
 

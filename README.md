@@ -39,6 +39,22 @@ python3 adapter.py --profile profile.yaml --config ../guide-kit.config.yaml
 
 No `profile.yaml`? That's a valid cold start — you get a generic first plan instead of an error. No `curriculum_path` configured? The planner picks a generic practice on its own and marks it `llm-assisted` in the decision log instead of failing or inventing a source. A required fact with no source at all — not even an LLM attempt — produces a diagnostic YAML explaining what's missing, never a silently empty or made-up guide.
 
+### Try it without your own catalog
+
+`demo/` ships a handful of public-domain sample cards — enough to see a
+real, non-empty guide before you've set up any content of your own:
+
+```bash
+GUIDE_KIT_CURRICULUM_PATH=../demo/curriculum python3 adapter.py \
+  --profile profile.yaml --config ../guide-kit.config.yaml
+```
+
+Set `cards_path: ../demo/cards` in your config to get full card content
+(not just the element's name) for the two sample practices included there.
+The demo cards live under their own `.D1`-style IDs in the worldview
+catalog and under the same production element IDs elsewhere — see
+`demo/README.md` for why.
+
 ## Usage (structurer)
 
 ```bash
@@ -74,6 +90,23 @@ as-is. Turn both off with `onboarding_ctas: false` in your config.
 - **Adopt the full IWE template** — a pointer to `setup.sh` for users whose
   AI agent is Claude Code.
 
+## Work section (optional, off by default)
+
+`work_section` adds a "what's active" block to the guide, read-only and
+LLM-free — a fact from a file, or honestly absent, never invented:
+
+- `off` (default) — no section.
+- `generic` — lists any file the structurer typed `2.2` in
+  `type-index.json`: title + link, no ranking (there's no portable,
+  tool-agnostic notion of "priority" to sort by).
+- `iwe` — this template's own convention: today's `current/DayPlan
+  {date}.md` table, as already ordered by whoever opened the day. No
+  DayPlan for today yet → an empty section, not a guess.
+
+Enabling `iwe` for a real installation is a decision made live with the
+person running it, not something a config default or a self-written file
+turns on — see `DP.SC.053`.
+
 ## Roadmap
 
 Core logic is being extracted from a working internal prototype in stages:
@@ -81,7 +114,8 @@ Core logic is being extracted from a working internal prototype in stages:
 1. ✅ Generator core (deterministic planner + thin LLM adapter, no cloud dependencies)
 2. ✅ Structurer (folder-based + per-file classification, mandatory quarantine)
 3. ✅ Two optional invitation steps (connect to a hosted service; adopt the full toolkit) — entirely opt-in, never required
-4. Portability tests: your data must be exportable in under an hour, runnable on a new machine in under a day, and speak only open protocols (no vendor-locked APIs)
+4. ✅ Demo catalog (see "Try it without your own catalog" above) + optional work section (see "Work section" above)
+5. Portability tests: your data must be exportable in under an hour, runnable on a new machine in under a day, and speak only open protocols (no vendor-locked APIs)
 
 ## License
 

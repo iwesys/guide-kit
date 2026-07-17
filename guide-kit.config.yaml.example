@@ -41,3 +41,25 @@ onboarding_ctas: true
 # that doesn't want to point at this platform yet); set to another URL to
 # point at a different platform entirely.
 platform_connect_url: null
+
+# The optional "what's active" block (README.md § Work section). Read-only,
+# no LLM. off (default) — no section. generic — lists any 2.2-typed file
+# from the structurer's type-index.json, title + link only. iwe — this
+# template's own convention: today's current/DayPlan {date}.md table.
+#
+# Leave this "off" unless you've made a deliberate decision to turn it on —
+# "iwe" surfaces your own work-item titles inside the generated guide, which
+# then travels wherever that guide travels (e.g. a synced personal-guide
+# repository). See DP.SC.053 before setting this to "iwe" on a real
+# installation.
+work_section: off
+
+# Only used when work_section is not "off". Base directory work_section
+# reads from: .structurer/type-index.json for "generic", inbox/WP-{N}/ for
+# "iwe" link resolution. Not set → the current working directory.
+base_path: null
+
+# Only used when work_section: iwe. Path to today's DayPlan file — absolute,
+# or relative to base_path. Not set (or the file doesn't exist yet, e.g. the
+# day hasn't been opened) → an honest empty section, not an error.
+dayplan_path: null

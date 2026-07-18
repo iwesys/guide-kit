@@ -1,10 +1,11 @@
 """
 personal_export.py — platform pull client for guide-kit.
 
-Fetches derived RCS profile and stage (mastery level within a role, 1-5 —
-not the platform's qualification degree, see DP.D.252) from the IWE platform
-via JSON-RPC 2.0 MCP transport. Writes profile.platform.yaml (compact keys
-+ provenance). Never sends PII upstream — read-only calls only.
+Fetches derived RCS profile, stage (mastery level within a role, 1-5), and
+qualification degree (DP.D.050 ladder, council-assigned — see DP.D.252 for
+why these are two separate axes) from the IWE platform via JSON-RPC 2.0 MCP
+transport. Writes profile.platform.yaml (compact keys + provenance). Never
+sends PII upstream — read-only calls only.
 
 CLI:
     python3 personal_export.py
@@ -28,6 +29,7 @@ import yaml
 _READ_TOOLS = ("dt_read_digital_twin", "dt_describe_by_path")
 _DEFAULT_PLATFORM_URL = "https://mcp.aisystant.com/mcp"
 _STAGE_PATH = "3_derived/3_4_qualification"
+_DEGREE_PATH = "3_derived/3_8_degree"
 
 _RCS_COMPACT_KEYS = frozenset({
     "W", "M1", "M2", "M3", "M4", "IT", "A",
@@ -163,6 +165,37 @@ def fetch_stage(
         return None, None, raw[:500]
 
 
+def fetch_degree(platform_url: str, token: str) -> tuple[str | None, str | None]:
+    """Fetch qualification degree (DP.D.050, DP.D.252 — a separate axis from stage:
+    only the methodological council assigns one, never computed or self-assigned)
+    from 3_derived/3_8_degree. Working hypothesis for the path, by analogy with
+    3_derived/3_4_qualification for stage — not verified against a live digital
+    twin; an absent/wrong path degrades honestly (None, None), same as fetch_stage.
+
+    Returns (degree, certified_at). certified_at is the most recent confirmation
+    date from the history list, if present.
+    """
+    if not _describe_path(platform_url, token, _DEGREE_PATH):
+        return None, None
+
+    data = _read_path(platform_url, token, _DEGREE_PATH)
+    if data is None:
+        return None, None
+
+    degree = data.get("current")
+    if not degree:
+        return None, None
+
+    certified_at = None
+    history = data.get("history")
+    if isinstance(history, list) and history:
+        last = history[-1]
+        if isinstance(last, dict):
+            certified_at = last.get("last_confirmed_at") or last.get("first_assigned_at")
+
+    return str(degree), certified_at
+
+
 _RCS_INT_SLOTS = frozenset({"W", "M1", "M2", "M3", "M4", "IT", "A", "stage_derived"})
 
 
@@ -236,6 +269,7 @@ def export(platform_url: str, rcs_path: str | None, output_path: str) -> int:
     fetched_at = datetime.now(timezone.utc).isoformat()
 
     stage_derived, stage_label, stage_raw = fetch_stage(platform_url, token)
+    degree, degree_certified_at = fetch_degree(platform_url, token)
 
     rcs_data: dict | None = None
     if rcs_path:
@@ -243,7 +277,7 @@ def export(platform_url: str, rcs_path: str | None, output_path: str) -> int:
     else:
         print("NOTE: --rcs-path не задан — выгрузка RCS пропускается", file=sys.stderr)
 
-    if stage_derived is None and rcs_data is None:
+    if stage_derived is None and rcs_data is None and degree is None:
         print(
             "WARNING: платформа не вернула полезных данных — profile.platform.yaml не записан",
             file=sys.stderr,
@@ -270,6 +304,13 @@ def export(platform_url: str, rcs_path: str | None, output_path: str) -> int:
         overlay["provenance"] = {"stage_label": stage_label}
     elif stage_raw is not None:
         overlay["provenance"] = {"stage_label_raw": stage_raw}
+
+    # Degree — a separate axis from stage (DP.D.252): council-assigned, never computed.
+    if degree is not None:
+        degree_block = {"degree": degree, "source": "platform"}
+        if degree_certified_at:
+            degree_block["certified_at"] = degree_certified_at
+        overlay["qualification_degree"] = degree_block
 
     with open(output_path, "w", encoding="utf-8") as fh:
         yaml.dump(overlay, fh, allow_unicode=True, sort_keys=False, default_flow_style=False)

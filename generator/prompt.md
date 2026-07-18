@@ -368,7 +368,8 @@ Return **only** the following JSON, no markdown fences, no text before or after.
     "narrative_phase": "Я — система",
     "worldview_arc": "Я — система",
     "bottleneck_slot": "M2",
-    "bottleneck_label": "IWE / ОРЗ"
+    "bottleneck_label": "IWE / ОРЗ",
+    "qualification_degree": "DEG.Worker"
   },
   "decision_log": { "bottleneck": "M2", "primary_area": "2 (tools)", "impact_type": "mastery", "element_choice": "...", "target_depth": 1, "tomatoes": 2, "trigger": "routine: ", "rcs_stage": 2 }
 }
@@ -383,6 +384,10 @@ Read the horizons top to bottom — this is the context for "why this specific t
 - `month.label` → this month's emphasis (or empty — then use the quarterly bottleneck)
 - `week.label` → this week's hypothesis (expected gain)
 - `day.missed_slots` / `day.calendar_load` → today's tactics
+
+**H1b. Read `context_for_llm.qualification_degree`, if present**
+
+This is the person's council-assigned qualification degree (МИМ ladder, e.g. `DEG.Worker`) — a completely different axis from `stage_derived` and from `card_content.degree` (that one is a specific practice card's own 1-5 skill level, unrelated). Use it only to calibrate the **assumed prior knowledge** in your wording — a higher degree means you can skip basic definitions and use domain vocabulary directly; a lower one means spell things out. It is never a gate: absent field → write as if the level is unknown, don't guess one and don't mention degree explicitly in the narrative (it's a calibration input, not a topic).
 
 **H2. Build the narrative (2-3 paragraphs)**
 

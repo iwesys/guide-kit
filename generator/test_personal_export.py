@@ -18,7 +18,7 @@ import pytest
 import yaml
 
 import personal_export as pe
-from adapter import _merge_rcs, apply_platform_overlay
+from adapter import _merge_degree, _merge_rcs, apply_platform_overlay
 from horizons import normalize_rcs_dict
 
 
@@ -206,9 +206,10 @@ class TestDegradations:
 
     def test_export_no_data_returns_1_no_file(self, tmp_path, monkeypatch):
         monkeypatch.setenv("GUIDE_KIT_PLATFORM_TOKEN", "testtoken")
-        # Both fetch_stage and fetch_rcs return nothing
+        # fetch_stage, fetch_rcs and fetch_degree all return nothing
         with patch.object(pe, "fetch_stage", return_value=(None, None, None)), \
-             patch.object(pe, "fetch_rcs", return_value=None):
+             patch.object(pe, "fetch_rcs", return_value=None), \
+             patch.object(pe, "fetch_degree", return_value=(None, None)):
             out = tmp_path / "out.yaml"
             code = pe.export("http://localhost/mcp", None, str(out))
         assert code == 1
@@ -314,6 +315,44 @@ class TestMergeRcs:
 
 
 # ---------------------------------------------------------------------------
+# _merge_degree — a separate, simpler axis from _merge_rcs (DP.D.252): degree is
+# council-assigned, never behaviorally computed, so there's no priority table —
+# platform wins whenever present, unless the user set an explicit use_declared.
+# ---------------------------------------------------------------------------
+
+class TestMergeDegree:
+    def test_overlay_fills_empty_declared(self):
+        declared = {}
+        overlay = {"degree": "DEG.Worker", "certified_at": "2026-01-15"}
+        result = _merge_degree(declared, overlay)
+        assert result == {"degree": "DEG.Worker", "source": "platform", "certified_at": "2026-01-15"}
+
+    def test_platform_beats_declared_by_default(self):
+        declared = {"degree": "DEG.Freshman", "source": "declared"}
+        overlay = {"degree": "DEG.Worker", "certified_at": "2026-01-15"}
+        result = _merge_degree(declared, overlay)
+        assert result["degree"] == "DEG.Worker"
+        assert result["source"] == "platform"
+
+    def test_use_declared_keeps_local_value(self):
+        declared = {"degree": "DEG.Worker", "source": "declared", "use_declared": True}
+        overlay = {"degree": "DEG.Freshman", "certified_at": "2020-01-01"}
+        result = _merge_degree(declared, overlay)
+        assert result == declared  # untouched
+
+    def test_no_overlay_degree_returns_declared_unchanged(self):
+        declared = {"degree": "DEG.Worker", "source": "declared"}
+        result = _merge_degree(declared, {})
+        assert result == declared
+
+    def test_overlay_without_certified_at_omits_it(self):
+        declared = {}
+        overlay = {"degree": "DEG.Freshman"}
+        result = _merge_degree(declared, overlay)
+        assert "certified_at" not in result
+
+
+# ---------------------------------------------------------------------------
 # apply_platform_overlay
 # ---------------------------------------------------------------------------
 
@@ -351,6 +390,28 @@ class TestApplyPlatformOverlay:
         assert result["mastery_by_area"]["area_1"] == 0.9   # declared wins
         assert result["mastery_by_area"]["area_2"] == 0.3   # filled from overlay
 
+    def test_overlay_merges_qualification_degree(self, tmp_path):
+        self._write_overlay(tmp_path, {
+            "qualification_degree": {"degree": "DEG.Worker", "certified_at": "2026-01-15"}
+        })
+        profile = {"qualification_degree": {"degree": "DEG.Freshman", "source": "declared"}}
+        profile_path = str(tmp_path / "profile.yaml")
+        result = apply_platform_overlay(profile, profile_path)
+        # No use_declared set → platform wins, unlike rcs's manual-vs-platform tie rules
+        assert result["qualification_degree"]["degree"] == "DEG.Worker"
+        assert result["qualification_degree"]["source"] == "platform"
+
+    def test_overlay_respects_use_declared_for_degree(self, tmp_path):
+        self._write_overlay(tmp_path, {
+            "qualification_degree": {"degree": "DEG.Freshman", "certified_at": "2020-01-01"}
+        })
+        profile = {"qualification_degree": {
+            "degree": "DEG.Worker", "source": "declared", "use_declared": True,
+        }}
+        profile_path = str(tmp_path / "profile.yaml")
+        result = apply_platform_overlay(profile, profile_path)
+        assert result["qualification_degree"]["degree"] == "DEG.Worker"
+
     def test_personal_export_off_skips_overlay(self, tmp_path):
         self._write_overlay(tmp_path, {
             "rcs": {"W": 4, "source": "computed_from_events"}
@@ -375,7 +436,8 @@ class TestExportIntegration:
         monkeypatch.setenv("GUIDE_KIT_PLATFORM_TOKEN", "testtoken")
         out = tmp_path / "profile.platform.yaml"
         with patch.object(pe, "fetch_stage", return_value=(3, "Профессионал", None)), \
-             patch.object(pe, "fetch_rcs", return_value=None):
+             patch.object(pe, "fetch_rcs", return_value=None), \
+             patch.object(pe, "fetch_degree", return_value=(None, None)):
             code = pe.export("http://localhost/mcp", None, str(out))
         assert code == 0
         assert out.exists()
@@ -383,17 +445,19 @@ class TestExportIntegration:
         assert data["rcs"]["stage_derived"] == 3
         assert data["provenance"]["stage_label"] == "Профессионал"
         assert data["is_derived"] is True
+        assert "qualification_degree" not in data
 
     def test_export_writes_full_bundle_when_stage_and_rcs_both_available(self, tmp_path, monkeypatch):
         """P.2(a) acceptance (MVP acceptance): 'exportable in under an
         hour' presumes the export is COMPLETE, not just fast — a bundle missing
         half the available data would technically finish quickly while still
         failing the promise. Only prior coverage exercised stage-only or
-        rcs-only; this is the one where both sources return real data."""
+        rcs-only; this is the one where all three sources return real data."""
         monkeypatch.setenv("GUIDE_KIT_PLATFORM_TOKEN", "testtoken")
         out = tmp_path / "profile.platform.yaml"
         with patch.object(pe, "fetch_stage", return_value=(4, "Исследователь", None)), \
-             patch.object(pe, "fetch_rcs", return_value={"W": 3, "M1": 2, "confidence": 0.7}):
+             patch.object(pe, "fetch_rcs", return_value={"W": 3, "M1": 2, "confidence": 0.7}), \
+             patch.object(pe, "fetch_degree", return_value=("DEG.Worker", "2026-01-15")):
             code = pe.export("http://localhost/mcp", "rcs_path", str(out))
         assert code == 0
         data = yaml.safe_load(out.read_text())
@@ -406,12 +470,30 @@ class TestExportIntegration:
         assert data["rcs"]["M1"] == 2
         assert data["rcs"]["confidence"] == 0.7
         assert data["provenance"]["stage_label"] == "Исследователь"
+        assert data["qualification_degree"] == {
+            "degree": "DEG.Worker", "source": "platform", "certified_at": "2026-01-15",
+        }
+
+    def test_export_degree_without_certified_at(self, tmp_path, monkeypatch):
+        """fetch_degree can return a degree with no history entry (fresh council
+        record, no confirmation date yet) — certified_at must not appear as None/empty."""
+        monkeypatch.setenv("GUIDE_KIT_PLATFORM_TOKEN", "testtoken")
+        out = tmp_path / "profile.platform.yaml"
+        with patch.object(pe, "fetch_stage", return_value=(None, None, None)), \
+             patch.object(pe, "fetch_rcs", return_value=None), \
+             patch.object(pe, "fetch_degree", return_value=("DEG.Freshman", None)):
+            code = pe.export("http://localhost/mcp", None, str(out))
+        assert code == 0
+        data = yaml.safe_load(out.read_text())
+        assert data["qualification_degree"] == {"degree": "DEG.Freshman", "source": "platform"}
+        assert "certified_at" not in data["qualification_degree"]
 
     def test_export_parse_failure_writes_raw(self, tmp_path, monkeypatch):
         monkeypatch.setenv("GUIDE_KIT_PLATFORM_TOKEN", "testtoken")
         out = tmp_path / "profile.platform.yaml"
         with patch.object(pe, "fetch_stage", return_value=(None, None, '{"stage": "bad"}')), \
-             patch.object(pe, "fetch_rcs", return_value={"W": 3}):
+             patch.object(pe, "fetch_rcs", return_value={"W": 3}), \
+             patch.object(pe, "fetch_degree", return_value=(None, None)):
             code = pe.export("http://localhost/mcp", "rcs_path", str(out))
         assert code == 0
         data = yaml.safe_load(out.read_text())

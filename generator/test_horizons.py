@@ -16,6 +16,7 @@ from horizons import (
     MonthThemes,
     PlanDay,
     DZItem,
+    QualificationDegree,
     TACTICAL_TRIGGERS,
     STRATEGIC_TRIGGERS,
 )
@@ -159,6 +160,19 @@ class TestHorizonContext:
         ctx = HorizonContext.from_render_context({}, monthly_theme_md=long_theme)
         assert len(ctx.month.label) == 500
 
+    def test_qualification_degree_defaults_empty(self):
+        """No degree source at all (offline, no council record known) → empty,
+        not a guessed default level (DP.D.252 — degree is never assumed)."""
+        ctx = HorizonContext(rcs=RCSProfile())
+        assert ctx.qualification_degree.degree == ""
+
+    def test_qualification_degree_from_dict_roundtrip(self):
+        d = QualificationDegree.from_dict(
+            {"degree": "DEG.Worker", "source": "platform", "certified_at": "2026-01-15"}
+        )
+        assert d.degree == "DEG.Worker"
+        assert d.to_dict() == {"degree": "DEG.Worker", "source": "platform", "certified_at": "2026-01-15"}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PlanDay
@@ -210,6 +224,19 @@ class TestPlanHorizon:
         assert "horizon_context" in result
         assert "context_for_llm" in result
         assert "decision_log" in result
+
+    def test_context_for_llm_omits_degree_when_unset(self):
+        """No council record known → key absent, not a guessed default (DP.D.252) —
+        the LLM must not see a fabricated qualification_degree."""
+        ctx = self._make_ctx()
+        result = plan_horizon(ctx, seed=0)
+        assert "qualification_degree" not in result["context_for_llm"]
+
+    def test_context_for_llm_includes_degree_when_set(self):
+        ctx = self._make_ctx()
+        ctx.qualification_degree = QualificationDegree(degree="DEG.Worker", source="platform")
+        result = plan_horizon(ctx, seed=0)
+        assert result["context_for_llm"]["qualification_degree"] == "DEG.Worker"
 
     def test_m2_bottleneck_selects_tools_area(self):
         ctx = self._make_ctx(bottleneck="M2")

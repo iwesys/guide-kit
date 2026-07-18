@@ -1015,6 +1015,10 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
             "worldview_arc": narrative_phase[1],
             "bottleneck_slot": bottleneck,
             "bottleneck_label": SLOT_LABELS.get(bottleneck, bottleneck),
+            # Unset (no council record, connected or not) → key omitted, not a guessed
+            # default degree — the LLM must not assume a knowledge level it wasn't told.
+            **({"qualification_degree": ctx.qualification_degree.degree}
+               if ctx.qualification_degree.degree else {}),
         },
         "decision_log": decision_log,
     }

@@ -13,6 +13,8 @@ You bring your own notes (Obsidian, Notion export, plain files, your own databas
 
 Everything runs locally. Your notes never leave your machine except through an explicit, opt-in call to your own LLM provider (BYOK) when the generator writes your guide's text. Classification itself never calls an LLM today.
 
+guide-kit never assigns you a stage or a qualification degree, and never guesses one when it doesn't have it — see **[HOW-IT-WORKS.md](HOW-IT-WORKS.md)** for exactly which inputs shape your guide, and what you're responsible for tracking yourself if you're not subscribed to the platform.
+
 ## Why
 
 Most personal-knowledge tools either lock you into their own AI, or lock your data into their own cloud. guide-kit does neither: the code is open, the method is documented, and nothing about it requires an account anywhere.

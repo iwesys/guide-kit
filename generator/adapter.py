@@ -28,6 +28,7 @@ from horizons import (
     HorizonContext,
     MonthThemes,
     OrchestratorTrigger,
+    QualificationDegree,
     QuarterFocus,
     RCSProfile,
     WeekHypothesis,
@@ -188,11 +189,37 @@ def _merge_rcs(declared_rcs: dict, overlay_rcs: dict) -> dict:
     return merged
 
 
+def _merge_degree(declared: dict, overlay: dict) -> dict:
+    """Merge declared and platform-derived qualification_degree.
+
+    Unlike rcs.stage, degree is never behaviorally computed and never freely
+    self-assigned — the methodological council is the only source of truth
+    (DP.D.252). Platform data wins whenever present, no priority table needed;
+    declared.use_declared=true is the one explicit, auditable escape hatch for
+    a stale platform record (mirrors _merge_rcs's manual_override, but simpler
+    since degree has no "freshness by computation" case to weigh against).
+    """
+    if not overlay.get("degree"):
+        return declared
+    if declared.get("use_declared"):
+        logger.info("qualification_degree overlay ignored (use_declared=true)")
+        return declared
+
+    merged = dict(declared)
+    merged["degree"] = overlay["degree"]
+    merged["source"] = "platform"
+    if overlay.get("certified_at"):
+        merged["certified_at"] = overlay["certified_at"]
+    logger.info("qualification_degree filled from platform: %r", overlay["degree"])
+    return merged
+
+
 def apply_platform_overlay(profile: dict, profile_path: str) -> dict:
     """Merge profile.platform.yaml into the profile dict if it exists.
 
-    Per-field merge on rcs and mastery_by_area only. Returns a new dict;
-    does not mutate the caller's profile. A missing overlay file is not an error.
+    Per-field merge on rcs and mastery_by_area, whole-block merge on
+    qualification_degree. Returns a new dict; does not mutate the caller's
+    profile. A missing overlay file is not an error.
     """
     overlay_path = os.path.join(
         os.path.dirname(os.path.abspath(profile_path)), "profile.platform.yaml"
@@ -223,6 +250,11 @@ def apply_platform_overlay(profile: dict, profile_path: str) -> dict:
             else:
                 logger.info("mastery_by_area.%s overlay ignored (declared present)", k)
         profile["mastery_by_area"] = declared_mastery
+
+    overlay_degree = overlay.get("qualification_degree") or {}
+    if overlay_degree:
+        declared_degree = dict(profile.get("qualification_degree") or {})
+        profile["qualification_degree"] = _merge_degree(declared_degree, overlay_degree)
 
     return profile
 
@@ -256,11 +288,14 @@ def build_horizon_context(profile: dict) -> HorizonContext:
     """profile.yaml (2.1-2.4 axes) → HorizonContext. An empty profile → RCSProfile() + empty horizons."""
     rcs_dict = profile.get("rcs") or {}
     rcs = RCSProfile.from_dict(rcs_dict) if rcs_dict else RCSProfile()
+    degree_dict = profile.get("qualification_degree") or {}
+    degree = QualificationDegree.from_dict(degree_dict) if degree_dict else QualificationDegree()
     trigger_dict = profile.get("trigger") or {}
     trigger = _from_dict_safe(OrchestratorTrigger, trigger_dict) if trigger_dict else OrchestratorTrigger()
 
     return HorizonContext(
         rcs=rcs,
+        qualification_degree=degree,
         trigger=trigger,
         quarter=_from_dict_safe(QuarterFocus, profile.get("quarter") or {}),
         month=_from_dict_safe(MonthThemes, profile.get("month") or {}),

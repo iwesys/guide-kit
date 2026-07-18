@@ -135,6 +135,44 @@ class RCSProfile:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Qualification degree (DP.D.050 ladder) — a separate axis from RCS stage.
+# See DP.D.252: stage reflects behavior and may be self-reported; degree is
+# assigned only by the methodological council. guide-kit reads it as context
+# for the assumed knowledge level, it never assigns or infers one.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class QualificationDegree:
+    """Qualification degree. `degree` is whatever code the source uses (e.g. the
+    platform's own "DEG.Worker") or the user's own words — not validated against
+    a fixed list, since the platform's full DEG.* enum isn't confirmed anywhere
+    in the Pack beyond DEG.Worker/DEG.Freshman. Empty degree = unknown, not a
+    default level; the planner must not assume "DEG.Freshman" for an unset field."""
+
+    degree: str = ""
+    source: str = ""            # platform | declared
+    certified_at: str = ""      # ISO date, optional — informational freshness signal
+    use_declared: bool = False  # explicit, auditable override: platform record is stale
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "QualificationDegree":
+        return cls(
+            degree=str(d.get("degree") or ""),
+            source=str(d.get("source") or ""),
+            certified_at=str(d.get("certified_at") or ""),
+            use_declared=bool(d.get("use_declared", False)),
+        )
+
+    def to_dict(self) -> dict:
+        result = {"degree": self.degree, "source": self.source}
+        if self.certified_at:
+            result["certified_at"] = self.certified_at
+        if self.use_declared:
+            result["use_declared"] = True
+        return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Orchestrator triggers
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -225,6 +263,7 @@ class HorizonContext:
     """
 
     rcs: RCSProfile
+    qualification_degree: QualificationDegree = field(default_factory=QualificationDegree)
     trigger: OrchestratorTrigger = field(default_factory=OrchestratorTrigger)
 
     # 4 horizons (empty fields -> planner.py derives them from RCS)

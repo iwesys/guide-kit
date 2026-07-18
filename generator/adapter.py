@@ -40,11 +40,13 @@ from llm_backends import GenerationContext, PromptSpec, generate as llm_generate
 
 logger = logging.getLogger(__name__)
 
-# Source authority order: lower value = higher priority.
-# Platform-computed data wins over a plain declaration by default — a stage is not
-# self-assigned (DP.METHOD.020). An accountable "manual_override" (requires
-# override_reason + override_at, see _merge_rcs) is the only way to beat platform data.
-# See WP-483 Ф11 needs-decision, peer-session 2026-07-18-02-wp483-f11-stage-vs-degree.
+# Source authority order: lower value = higher priority. Only matters in conflict — an
+# offline user has no profile.platform.yaml to conflict with, so this never runs for them.
+# A self-reported stage is legitimate on its own (DP.D.252); this order is about
+# freshness, not legitimacy — computed_from_events wins by default because an unmarked
+# local edit is more often stale than deliberate. A "manual_override" (with
+# override_reason + override_at, see _merge_rcs) is the only way to beat it — including
+# when the platform trail itself has gone stale.
 _SOURCE_PRIORITY: dict[str, int] = {
     "manual_override": 0,
     "computed_from_events": 1,

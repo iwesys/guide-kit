@@ -1,7 +1,8 @@
 """
 personal_export.py — platform pull client for guide-kit.
 
-Fetches derived RCS profile and qualification stage from the IWE platform
+Fetches derived RCS profile and stage (mastery level within a role, 1-5 —
+not the platform's qualification degree, see DP.D.252) from the IWE platform
 via JSON-RPC 2.0 MCP transport. Writes profile.platform.yaml (compact keys
 + provenance). Never sends PII upstream — read-only calls only.
 
@@ -132,7 +133,9 @@ def _read_path(platform_url: str, token: str, path: str) -> dict | None:
 def fetch_stage(
     platform_url: str, token: str
 ) -> tuple[int | None, str | None, str | None]:
-    """Fetch qualification stage from 3_derived/3_4_qualification.
+    """Fetch stage (mastery level within a role) from 3_derived/3_4_qualification —
+    the platform's own field path uses "qualification" in its name, but this is the
+    per-role stage (DP.METHOD.020 §2), not the qualification degree (§3, DP.D.252).
 
     Returns (stage_derived, stage_label, raw_on_parse_failure).
     Success: (int, str, None). Parse failure: (None, None, raw). Path absent: (None, None, None).

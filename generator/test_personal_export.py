@@ -5,7 +5,8 @@ Unit coverage:
 - allowlist rejects write tools before network
 - strict argparse: unknown flag → exit 2
 - degradations: 500, 401, 403, empty, invalid JSON
-- per-field merge: partial rcs not padded, atomic stage, missing source → manual
+- per-field merge: partial rcs not padded, atomic stage, missing source → unknown,
+  platform beats a plain manual declaration, accountable manual_override beats platform
 """
 import io
 import json
@@ -219,13 +220,37 @@ class TestDegradations:
 # ---------------------------------------------------------------------------
 
 class TestMergeRcs:
-    def test_manual_declared_beats_platform(self):
+    def test_platform_beats_plain_manual(self):
+        # A stage is not self-assigned (DP.METHOD.020) — a plain "manual" declaration
+        # no longer beats platform-computed data. See WP-483 Ф11, peer-session
+        # 2026-07-18-02-wp483-f11-stage-vs-degree.
         declared = {"W": 2, "M1": 3, "source": "manual"}
+        overlay = {"W": 4, "M1": 5, "source": "computed_from_events"}
+        result = _merge_rcs(declared, overlay)
+        assert result["W"] == 4
+        assert result["M1"] == 5
+        assert result["source"] == "computed_from_events"
+
+    def test_accountable_manual_override_beats_platform(self):
+        declared = {
+            "W": 2, "M1": 3, "source": "manual_override",
+            "override_reason": "platform stage is stale after a 3-month break",
+            "override_at": "2026-07-18T06:00:00Z",
+        }
         overlay = {"W": 4, "M1": 5, "source": "computed_from_events"}
         result = _merge_rcs(declared, overlay)
         assert result["W"] == 2
         assert result["M1"] == 3
-        assert result["source"] == "manual"
+        assert result["source"] == "manual_override"
+
+    def test_manual_override_without_justification_is_demoted_to_manual(self, capsys):
+        # source claims manual_override but no reason/timestamp — doesn't count.
+        declared = {"W": 2, "source": "manual_override"}
+        overlay = {"W": 4, "source": "computed_from_events"}
+        result = _merge_rcs(declared, overlay)
+        assert result["W"] == 4
+        captured = capsys.readouterr()
+        assert "unaccountable override" in captured.err
 
     def test_platform_beats_diagnostic_session(self):
         declared = {"W": 2, "M1": 3, "source": "diagnostic_session"}
@@ -262,22 +287,22 @@ class TestMergeRcs:
         assert result["M1"] == 3
         assert result["bottleneck"] == "M1"
 
-    def test_missing_source_treated_as_manual(self, capsys):
+    def test_missing_source_treated_as_unknown_not_manual(self, capsys):
         declared = {"W": 2, "M1": 3}  # no source key
         overlay = {"W": 4, "source": "computed_from_events"}
         result = _merge_rcs(declared, overlay)
-        # Missing declared source → manual → declared wins
-        assert result["W"] == 2
+        # Missing declared source → unknown (lowest priority) → platform wins
+        assert result["W"] == 4
         captured = capsys.readouterr()
-        assert "manual" in captured.err
+        assert "unknown" in captured.err
 
     def test_final_source_is_max_authority(self):
-        # overlay fills some missing slots → both declared (manual) and overlay used
+        # overlay fills a missing slot (M1) and wins the W conflict (platform > manual)
         declared = {"W": 2, "source": "manual"}
         overlay = {"M1": 3, "source": "computed_from_events"}
         result = _merge_rcs(declared, overlay)
-        # manual wins (lower priority number)
-        assert result["source"] == "manual"
+        # platform wins (lower priority number than plain manual)
+        assert result["source"] == "computed_from_events"
 
     def test_atomic_stage_derived_from_overlay(self):
         # stage_derived comes from overlay as an atomic pair at export time;

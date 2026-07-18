@@ -40,11 +40,17 @@ from llm_backends import GenerationContext, PromptSpec, generate as llm_generate
 
 logger = logging.getLogger(__name__)
 
-# Source authority order: lower value = higher priority (manual wins over everything)
+# Source authority order: lower value = higher priority.
+# Platform-computed data wins over a plain declaration by default — a stage is not
+# self-assigned (DP.METHOD.020). An accountable "manual_override" (requires
+# override_reason + override_at, see _merge_rcs) is the only way to beat platform data.
+# See WP-483 Ф11 needs-decision, peer-session 2026-07-18-02-wp483-f11-stage-vs-degree.
 _SOURCE_PRIORITY: dict[str, int] = {
-    "manual": 0,
+    "manual_override": 0,
     "computed_from_events": 1,
-    "diagnostic_session": 2,
+    "manual": 2,
+    "diagnostic_session": 3,
+    "unknown": 4,
 }
 _PRIORITY_TO_SOURCE = {v: k for k, v in _SOURCE_PRIORITY.items()}
 
@@ -106,20 +112,31 @@ def load_profile(profile_path: str) -> dict:
 def _merge_rcs(declared_rcs: dict, overlay_rcs: dict) -> dict:
     """Per-field merge of declared and platform overlay RCS dicts.
 
-    Priority: manual > computed_from_events > diagnostic_session.
+    Priority: manual_override (accountable — requires override_reason + override_at) >
+    computed_from_events > manual > diagnostic_session. A missing or unrecognized
+    declared source is 'unknown' (lowest priority) — it does not beat platform data.
     Overlay never deletes a declared key. Final source = max authority of used fields.
     """
     declared_source = declared_rcs.get("source") or ""
     if not declared_source:
         print(
-            "WARNING: declared rcs.source is missing — treating as 'manual'",
+            "WARNING: declared rcs.source is missing — treating as 'unknown' (lowest priority)",
+            file=sys.stderr,
+        )
+        declared_source = "unknown"
+    elif declared_source == "manual_override" and not (
+        declared_rcs.get("override_reason") and declared_rcs.get("override_at")
+    ):
+        print(
+            "WARNING: rcs.source is 'manual_override' but override_reason/override_at is "
+            "missing — treating as plain 'manual' (an unaccountable override doesn't count)",
             file=sys.stderr,
         )
         declared_source = "manual"
 
     overlay_source = overlay_rcs.get("source", "computed_from_events")
-    declared_pri = _SOURCE_PRIORITY.get(declared_source, 0)
-    overlay_pri = _SOURCE_PRIORITY.get(overlay_source, 1)
+    declared_pri = _SOURCE_PRIORITY.get(declared_source, _SOURCE_PRIORITY["unknown"])
+    overlay_pri = _SOURCE_PRIORITY.get(overlay_source, _SOURCE_PRIORITY["computed_from_events"])
 
     merged = dict(declared_rcs)
     declared_merged = False

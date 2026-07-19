@@ -148,8 +148,9 @@ def _read_snapshot_fallback(
     fallback for fetch_stage() when the live platform is unreachable.
 
     Returns (stage, label), or (None, None) if the file is missing, malformed,
-    holds an out-of-range stage, or is older than max_age_days. Never raises —
-    a broken cache degrades exactly like no cache.
+    holds an out-of-range stage, is dated in the future (clock skew / corrupt
+    write — cannot be trusted either way), or is older than max_age_days.
+    Never raises — a broken cache degrades exactly like no cache.
     """
     try:
         with open(path, encoding="utf-8") as fh:
@@ -167,10 +168,10 @@ def _read_snapshot_fallback(
         return None, None
 
     age_days = (datetime.now(timezone.utc).date() - snapshot_date).days
-    if age_days > max_age_days:
+    if age_days < 0 or age_days > max_age_days:
         print(
-            f"NOTE: резервный снимок {path!r} устарел ({age_days} дн. > "
-            f"{max_age_days}) — не используется",
+            f"NOTE: резервный снимок {path!r} устарел или датирован будущим "
+            f"({age_days} дн.) — не используется",
             file=sys.stderr,
         )
         return None, None

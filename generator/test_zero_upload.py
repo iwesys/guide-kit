@@ -93,8 +93,11 @@ class TestPiiCanariesNotInPlatformPayload:
             self._platform_response({"exists": False})
         )
         with patch("urllib.request.urlopen", transport):
-            # fetch_stage calls describe on _STAGE_PATH — body must not contain PII
-            pe.fetch_stage("http://localhost/mcp", "testtoken")
+            # fetch_stage calls describe on _STAGE_PATH — body must not contain PII.
+            # Explicit missing snapshot_cache_path: keeps this test hermetic —
+            # otherwise a real-machine derived_snapshot.json could silently
+            # satisfy the fallback and mask a describe/read regression.
+            pe.fetch_stage("http://localhost/mcp", "testtoken", str(tmp_path / "no-snapshot.json"))
 
         assert transport.captured_bodies, "no requests were made"
         for body in transport.captured_bodies:
@@ -112,7 +115,7 @@ class TestPiiCanariesNotInPlatformPayload:
             self._platform_response({"stage_derived": 2, "stage_label": "Ученик"})
         )
         with patch("urllib.request.urlopen", transport):
-            pe.fetch_stage("http://localhost/mcp", "testtoken")
+            pe.fetch_stage("http://localhost/mcp", "testtoken", str(tmp_path / "no-snapshot.json"))
 
         # At least 2 requests: describe + read
         assert len(transport.captured_bodies) >= 2
@@ -128,7 +131,7 @@ class TestPiiCanariesNotInPlatformPayload:
         monkeypatch.setenv("GUIDE_KIT_PLATFORM_TOKEN", "testtoken")
 
         out = tmp_path / "profile.platform.yaml"
-        with patch.object(pe, "fetch_stage", return_value=(3, "Профессионал", None)), \
+        with patch.object(pe, "fetch_stage", return_value=(3, "Профессионал", None, "platform")), \
              patch.object(pe, "fetch_rcs", return_value={"W": 4, "source": "computed_from_events"}):
             code = pe.export("http://localhost/mcp", "rcs_path", str(out))
 
@@ -187,7 +190,7 @@ class TestFullPipelineDoesNotTouchPlatformNetwork:
 # ---------------------------------------------------------------------------
 
 class TestQuarantineContentNotInPayloads:
-    def test_quarantine_content_not_in_platform_request(self, monkeypatch):
+    def test_quarantine_content_not_in_platform_request(self, monkeypatch, tmp_path):
         """Personal export requests must never carry quarantine-flagged content."""
         monkeypatch.setenv("GUIDE_KIT_PLATFORM_TOKEN", "testtoken")
 
@@ -200,7 +203,7 @@ class TestQuarantineContentNotInPayloads:
         with patch("urllib.request.urlopen", transport):
             # Even if quarantine content was somehow in the environment, it must not leak
             with patch.dict(os.environ, {"SOME_LOCAL_VAR": _QUARANTINE_CONTENT}):
-                pe.fetch_stage("http://localhost/mcp", "testtoken")
+                pe.fetch_stage("http://localhost/mcp", "testtoken", str(tmp_path / "no-snapshot.json"))
 
         for body in transport.captured_bodies:
             body_str = body.decode("utf-8", errors="replace")
@@ -217,14 +220,14 @@ class TestQuarantineContentNotInPayloads:
 
         # Platform returns normal RCS data — no quarantine content
         out = tmp_path / "profile.platform.yaml"
-        with patch.object(pe, "fetch_stage", return_value=(2, "Ученик", None)), \
+        with patch.object(pe, "fetch_stage", return_value=(2, "Ученик", None, "platform")), \
              patch.object(pe, "fetch_rcs", return_value={"W": 2}):
             pe.export("http://localhost/mcp", "rcs_path", str(out))
 
         raw = out.read_text()
         assert _QUARANTINE_CONTENT not in raw
 
-    def test_quarantine_content_not_in_platform_request_bodies(self, monkeypatch):
+    def test_quarantine_content_not_in_platform_request_bodies(self, monkeypatch, tmp_path):
         """Platform HTTP request bodies must never contain quarantine-flagged strings.
 
         personal_export only sends tool-name + path in request bodies — there is no
@@ -242,7 +245,7 @@ class TestQuarantineContentNotInPayloads:
                 }).encode()
             )
             with patch("urllib.request.urlopen", transport):
-                pe.fetch_stage("http://localhost/mcp", "testtoken")
+                pe.fetch_stage("http://localhost/mcp", "testtoken", str(tmp_path / "no-snapshot.json"))
 
         for body in transport.captured_bodies:
             body_str = body.decode("utf-8", errors="replace")

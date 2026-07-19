@@ -254,6 +254,13 @@ class TestSnapshotFallback:
         path = self._write_snapshot(tmp_path, stage_raw=9)
         assert pe._read_snapshot_fallback(path) == (None, None)
 
+    def test_future_dated_snapshot_degrades_to_none(self, tmp_path):
+        """Clock skew or a corrupt write could date a snapshot in the future —
+        that isn't 'fresh', it's untrustworthy, and must not be used either."""
+        future_date = (date.today() + timedelta(days=5)).isoformat()
+        path = self._write_snapshot(tmp_path, snapshot_date=future_date)
+        assert pe._read_snapshot_fallback(path) == (None, None)
+
     def test_fetch_stage_falls_back_when_platform_path_absent(self, tmp_path):
         """_describe_path returns False (path absent on the platform) — the live
         branch never reaches a parse attempt; fetch_stage must still try the cache."""

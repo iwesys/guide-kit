@@ -293,10 +293,17 @@ class TestPlatformKnowledgeRequestsCarryNoPii:
         assert transport.captured_bodies, "no requests were made"
         for body in transport.captured_bodies:
             body_str = body.decode("utf-8", errors="replace")
-            # element_id itself is sent as the query (by design — it is not
-            # PII), but nothing from a user profile ever reaches this call in
-            # the real pipeline: generate_daily_plan passes only planner_result's
-            # element_id, never profile fields, to load_card_content.
+            # The email canary is deliberately embedded IN the element_id above
+            # to prove where the boundary actually is: whatever is passed as
+            # element_id is sent as the query verbatim (by design — a catalog
+            # code is not PII), so it appearing here is expected, not a leak.
+            assert _PII_CANARY_EMAIL in body_str, (
+                "sanity check: element_id should be sent verbatim as the query"
+            )
+            # Nothing else from a user profile ever reaches this call in the
+            # real pipeline — generate_daily_plan passes only planner_result's
+            # element_id, never profile fields, to load_card_content — so none
+            # of these three (which were never part of element_id) may appear.
             assert _PII_CANARY_PHONE not in body_str
             assert _PII_CANARY_NAME not in body_str
             assert _PII_CANARY_CARD not in body_str

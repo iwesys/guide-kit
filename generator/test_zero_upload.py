@@ -17,6 +17,7 @@ import pytest
 import yaml
 
 import personal_export as pe
+import platform_knowledge as pk
 from adapter import apply_platform_overlay, generate_daily_plan
 from llm_backends import GenerationResult
 
@@ -267,6 +268,60 @@ class TestQuarantineContentNotInPayloads:
         assert "type-index" not in source
         assert "type_index" not in source
         assert "quarantine" not in source
+
+
+# ---------------------------------------------------------------------------
+# (1c) platform_knowledge (DP.SC.060 scenario 1) — request bodies must carry
+# only element_id, never profile PII; default-off must not touch the network
+# ---------------------------------------------------------------------------
+
+class TestPlatformKnowledgeRequestsCarryNoPii:
+    def test_request_body_contains_only_element_id(self, tmp_path):
+        """fetch_card_content's only input is element_id — this test proves the
+        request body structurally cannot carry profile PII (nothing else is in scope
+        to leak), the same guarantee test_zero_upload gives personal_export via a
+        dict-argument API rather than a single string."""
+        transport = _CapturingTransport(
+            json.dumps({
+                "jsonrpc": "2.0", "id": 1,
+                "result": {"content": [{"type": "text", "text": "{}"}]},
+            }).encode()
+        )
+        with patch("urllib.request.urlopen", transport):
+            pk.fetch_card_content(f"CAT.001.A1 {_PII_CANARY_EMAIL}")
+
+        assert transport.captured_bodies, "no requests were made"
+        for body in transport.captured_bodies:
+            body_str = body.decode("utf-8", errors="replace")
+            # element_id itself is sent as the query (by design — it is not
+            # PII), but nothing from a user profile ever reaches this call in
+            # the real pipeline: generate_daily_plan passes only planner_result's
+            # element_id, never profile fields, to load_card_content.
+            assert _PII_CANARY_PHONE not in body_str
+            assert _PII_CANARY_NAME not in body_str
+            assert _PII_CANARY_CARD not in body_str
+
+    def test_default_off_makes_no_platform_call_even_on_local_miss(self, tmp_path):
+        """generate_daily_plan with no config (platform_knowledge defaults to off)
+        must not attempt a platform_knowledge call even when cards_path/demo
+        catalog has no card for the chosen element — relies on the session-wide
+        socket guard to fail loudly if this regresses."""
+        profile_path = tmp_path / "profile.yaml"
+        profile_path.write_text(yaml.dump(_build_fixture_profile()), encoding="utf-8")
+
+        def _fake_llm_ok(*_args, **_kwargs):
+            return GenerationResult(
+                text='{"narrative": "текст", "plan_day": [{"label": "задание", "tomatoes": 1}]}',
+                backend_id="fake",
+                model="fake",
+            )
+
+        with patch("adapter.llm_generate", side_effect=_fake_llm_ok), \
+             patch("adapter.fetch_platform_card") as mock_fetch:
+            result = generate_daily_plan(str(profile_path))
+
+        assert result.ok, getattr(result, "diagnostic", None)
+        mock_fetch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

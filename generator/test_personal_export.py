@@ -245,6 +245,11 @@ class TestSnapshotFallback:
     def test_missing_file_degrades_to_none(self, tmp_path):
         assert pe._read_snapshot_fallback(str(tmp_path / "absent.json")) == (None, None)
 
+    def test_invalid_utf8_degrades_to_none(self, tmp_path):
+        path = tmp_path / "derived_snapshot.json"
+        path.write_bytes(b"\xff\xfe not valid utf-8")
+        assert pe._read_snapshot_fallback(str(path)) == (None, None)
+
     def test_malformed_json_degrades_to_none(self, tmp_path):
         path = tmp_path / "derived_snapshot.json"
         path.write_text("not json", encoding="utf-8")

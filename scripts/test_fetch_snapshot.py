@@ -202,6 +202,45 @@ class TestFetchSnapshotRoundTrip:
         assert not stale_file.exists()
 
 
+class TestGhDownloadCommandShape:
+    """Asserts on the actual argv passed to gh — the other tests mock
+    subprocess.run to accept any command, so a wrong flag (e.g. a
+    nonexistent --latest) would pass them silently. This is what caught
+    that exact regression during a live round-trip against the real gh CLI."""
+
+    def test_no_tag_omits_any_tag_argument(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(fetch_snapshot_mod.shutil, "which", lambda name: "/usr/bin/gh")
+        captured = {}
+
+        def _fake_run(cmd, capture_output, text):
+            captured["cmd"] = cmd
+            archive = tmp_path / "guide-kit-snapshot-2026-07-19.tar.gz"
+            archive.write_bytes(b"")
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(fetch_snapshot_mod.subprocess, "run", _fake_run)
+        fetch_snapshot_mod._gh_download(tmp_path, tag=None)
+
+        assert captured["cmd"][:3] == ["gh", "release", "download"]
+        assert "--latest" not in captured["cmd"], "gh has no --latest flag — omitting the tag is how gh means latest"
+        assert "--pattern" in captured["cmd"], "a tag-less call requires --pattern or --archive per gh's own contract"
+
+    def test_with_tag_passes_it_as_a_positional_argument(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(fetch_snapshot_mod.shutil, "which", lambda name: "/usr/bin/gh")
+        captured = {}
+
+        def _fake_run(cmd, capture_output, text):
+            captured["cmd"] = cmd
+            archive = tmp_path / "guide-kit-snapshot-2026-01-01.tar.gz"
+            archive.write_bytes(b"")
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(fetch_snapshot_mod.subprocess, "run", _fake_run)
+        fetch_snapshot_mod._gh_download(tmp_path, tag="snapshot-2026-01-01")
+
+        assert captured["cmd"][3] == "snapshot-2026-01-01"
+
+
 class TestGhDownloadFailures:
     def test_missing_gh_binary_raises(self, tmp_path, monkeypatch):
         monkeypatch.setattr(fetch_snapshot_mod.shutil, "which", lambda name: None)

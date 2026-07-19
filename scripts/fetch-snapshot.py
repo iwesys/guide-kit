@@ -56,7 +56,12 @@ def _gh_download(out_dir: Path, tag: str | None) -> Path:
         raise SnapshotFetchError("gh CLI not found — required to download the release asset")
 
     cmd = ["gh", "release", "download"]
-    cmd.append(tag if tag else "--latest")
+    if tag:
+        cmd.append(tag)
+    # No tag → gh defaults to the latest release on its own (a positional
+    # argument, not a --latest flag — this CLI has no such flag; --pattern
+    # below satisfies gh's own requirement that a tag-less call must narrow
+    # by --pattern or --archive).
     cmd += ["--repo", _REPO, "--pattern", "*.tar.gz", "--dir", str(out_dir), "--clobber"]
 
     result = subprocess.run(cmd, capture_output=True, text=True)

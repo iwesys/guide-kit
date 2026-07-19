@@ -92,6 +92,18 @@ class TestCheckFreshness:
         assert warning is not None
         assert "not a valid" in warning
 
+    def test_exactly_at_max_age_boundary_no_warning(self):
+        """age_days == max_age_days must NOT warn — a regression from '>' to
+        '>=' would flip this silently without any other test noticing."""
+        manifest = {"snapshot_date": "2026-04-20"}  # exactly 90 days before 2026-07-19
+        assert fetch_snapshot_mod._check_freshness(manifest, "2026-07-19", max_age_days=90) is None
+
+    def test_one_day_past_max_age_warns(self):
+        manifest = {"snapshot_date": "2026-04-19"}  # 91 days before 2026-07-19
+        warning = fetch_snapshot_mod._check_freshness(manifest, "2026-07-19", max_age_days=90)
+        assert warning is not None
+        assert "91 days old" in warning
+
 
 class TestReadManifest:
     def test_reads_real_archive_manifest(self, tmp_path):

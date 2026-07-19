@@ -135,11 +135,17 @@ def fetch_snapshot(
         extracted = out_dir / "baseline"
         if extracted.exists():
             shutil.rmtree(extracted)
-        with tarfile.open(archive_path, "r:gz") as tar:
-            # tarfile.data_filter (not the "data" string alias) — the alias
-            # form is only accepted from 3.12, the function form works on
-            # the 3.11 CI runner too (PEP 706, backported to 3.11.4+).
-            tar.extractall(out_dir, filter=tarfile.data_filter)
+        try:
+            with tarfile.open(archive_path, "r:gz") as tar:
+                # tarfile.data_filter (not the "data" string alias) — the alias
+                # form is only accepted from 3.12, the function form works on
+                # the 3.11 CI runner too (PEP 706, backported to 3.11.4+).
+                tar.extractall(out_dir, filter=tarfile.data_filter)
+        except tarfile.TarError as e:
+            raise SnapshotFetchError(
+                f"archive failed a safety check during extraction ({e}) — "
+                "refusing a malformed or unsafe (path traversal / symlink) archive"
+            ) from e
 
     return extracted, warning
 

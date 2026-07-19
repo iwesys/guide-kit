@@ -4,6 +4,11 @@
 # Optional: path to a local copy of curriculum content (worldview elements).
 # Not set → guide-kit still works: the LLM picks a worldview element on its
 # own, and the decision log honestly marks that slot as "llm-assisted".
+#
+# No platform account at all? Run `python3 scripts/fetch-snapshot.py --out-dir .
+# --today YYYY-MM-DD` once to download a versioned snapshot of the curated
+# CAT.001-003 materials (published as a GitHub Release on this repo — no
+# server, no token). Point this at the extracted baseline/CAT.001 directory.
 curriculum_path: null
 
 # Optional: path to local practice card content (concrete can-do/task/assessment

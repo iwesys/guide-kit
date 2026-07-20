@@ -351,7 +351,14 @@ Return **only** the following JSON, no markdown fences, no text before or after.
     "element_type": "mastery",
     "area": 2,
     "target_depth": 1,
-    "tomatoes": 2
+    "tomatoes": 2,
+    "applied_section": {
+      "domain": "swimming",
+      "characteristic": "water_comfort",
+      "link_mode": "theme_lens",
+      "worldview_area": 2,
+      "note": "мини-секция дополняет мыслительный урок, не заменяет и не продвигает программу автоматически"
+    }
   },
   "horizon_context": {
     "quarter": { "bottleneck_slot": "M2", "theme": "Выстроить IWE", "target_delta": {"M2": 2} },
@@ -404,6 +411,18 @@ For each element in `plan_skeleton`:
 - `rationale` — 1 sentence: why this specific element today (a micro-narrative)
 - Other fields (`element_id`, `element_type`, `area`, `target_depth`, `tomatoes`) — from `plan_skeleton`
 
+**H3.5 Applied-mastery mini-section, if `plan_skeleton.applied_section` is present (WP-495 Ф3, WP-483 Ф5b)**
+
+> `applied_section` is null/absent when no domain track is active (no domain-traits data yet, or every trait of the active domain is already measured or dormant) — in that case skip this step entirely, the day stays worldview-only. This is the same honest-absence principle as the rest of the planner: never invent a domain connection that isn't in the data.
+
+When present, `applied_section` carries `{domain, characteristic, link_mode, worldview_area, note}` — the planner already chose WHICH domain and characteristic; your only job is the WORDING of the connection, per `link_mode`:
+
+- `link_mode = "theme_lens"` (today's only implemented value) — show the domain practice **through the lens of today's worldview theme**: one short paragraph (2-4 sentences) that names the domain (e.g. "плавание", "фортепиано"), the specific `characteristic` to work on, and draws the SAME distinction as today's worldview element, just applied to that domain. Not a second, unrelated lesson — a second surface where the same idea shows up.
+- `link_mode = "adjacent_case"` (reserved for future planner logic, not emitted today — handle only if it actually arrives) — present the domain practice as a **separate, self-contained case** next to the worldview lesson, without forcing a thematic link. Still 2-4 sentences, still names domain + characteristic, but no "same idea, different surface" framing — just "also today, work on X in your <domain>."
+- Any other value → treat as `theme_lens` (safe default) and note the unrecognized value in `adaptation_notes`.
+
+Append this as a **new top-level narrative field** `applied_note` (2-4 sentences, Russian, same informal "ты" address as `narrative`) — never merged into `narrative` itself, so the delivery layer can place it as a distinct mini-section per the WP-495 Ф3 model ("дополняет мыслительный урок, не заменяет и не продвигает программу автоматически" — carry that spirit: this is a side practice, not a second bottleneck to solve today).
+
 **H4. Tone and length by trigger**
 
 | trigger | Tone | Narrative length |
@@ -431,6 +450,7 @@ For each element in `plan_skeleton`:
     }
   ],
   "narrative": "Сегодня начинаем строить IWE-рутину...\n\nЭтот месяц — про инвестирование времени...\n\nГипотеза недели: первый слот ОРЗ.",
+  "applied_note": "Та же дистинкция, только в бассейне: сегодня — «...» — null if plan_skeleton.applied_section is absent",
   "week_label": "",
   "trigger_response": "",
   "decision_log": { "...": "copy verbatim from the input decision_log" }
@@ -443,9 +463,10 @@ For each element in `plan_skeleton`:
 2. `narrative` — 2-3 paragraphs, separated by `\n\n`; Russian language; informal "ты" address
 3. `label` — ≤60 characters; verb + object ("Составить трекер времени")
 4. `rationale` — 1 sentence; explains bottleneck → element
-5. `trigger_response` — empty string for `routine`; an explanation of the reaction for other triggers
-6. `decision_log` — copy from the input JSON, don't change anything
-7. JSON only — no surrounding text
+5. `applied_note` — null if `plan_skeleton.applied_section` is absent/null, otherwise 2-4 sentences per H3.5 (Russian, informal "ты")
+6. `trigger_response` — empty string for `routine`; an explanation of the reaction for other triggers
+7. `decision_log` — copy from the input JSON, don't change anything
+8. JSON only — no surrounding text
 
 ---
 

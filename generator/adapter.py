@@ -441,11 +441,17 @@ def render_markdown(
     decision_log: list[dict],
     onboarding_appendix: str = "",
     work_section_markdown: str = "",
+    applied_note: str = "",
 ) -> str:
     """work_section_markdown sits in the body, after the visible
     plan and before onboarding_appendix — unlike the appendix, it DOES carry
     provenance (each listed item has a decision_log entry), so it belongs among
     the guide's regular content, not after it.
+
+    applied_note (WP-483 Ф5b) is the applied-mastery mini-section text, present
+    only when plan_skeleton.applied_section was non-null — it sits right after
+    the assignment list, framed as a side practice (WP-495 Ф3: "дополняет
+    мыслительный урок, не заменяет"), never merged into the main narrative.
 
     onboarding_appendix sits after everything else and before
     the decision_log comment — it carries no provenance and is outside the
@@ -456,6 +462,8 @@ def render_markdown(
         tomatoes = item.get("tomatoes", 1)
         rationale = item.get("rationale", "")
         lines.append(f"- **{label}** ({tomatoes} помидорок) — {rationale}")
+    if applied_note:
+        lines += ["", "## Прикладная практика", "", applied_note]
     if work_section_markdown:
         lines += ["", work_section_markdown]
     if onboarding_appendix:
@@ -573,6 +581,8 @@ def generate_daily_plan(
 
     narrative = llm_output.get("narrative", "")
     plan_day = llm_output.get("plan_day", [])
+    applied_note_raw = llm_output.get("applied_note")
+    applied_note = applied_note_raw if isinstance(applied_note_raw, str) else ""
     if not narrative or not plan_day:
         # decision_log only checks the PROVENANCE of a fact, not whether the LLM
         # actually returned something — valid JSON with an empty plan_day would
@@ -590,7 +600,7 @@ def generate_daily_plan(
         )
 
     onboarding_appendix = render_onboarding_ctas(config)
-    markdown = render_markdown(narrative, plan_day, decision_log, onboarding_appendix, work_section_markdown)
+    markdown = render_markdown(narrative, plan_day, decision_log, onboarding_appendix, work_section_markdown, applied_note)
     return GuideResult(ok=True, markdown=markdown)
 
 

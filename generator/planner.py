@@ -636,6 +636,59 @@ def _build_session_goal(element_id: str | None, impact_type: ImpactType, area: i
 
 
 # ---------------------------------------------------------------------------
+# Applied track (Ф5b): domain_traits → daily applied-mastery mini-section.
+# Model fixed in WP-495 Ф3 (2026-07-18) — two-factor hierarchical choice:
+# primary = the applied program's next unresolved step (one active domain,
+# program order is not skippable); secondary (optional) = link to today's
+# worldview lesson. The applied section never replaces the worldview lesson.
+# ---------------------------------------------------------------------------
+
+def _choose_domain_step(domain_traits: list) -> tuple[str, str, str] | None:
+    """Pick the next unresolved step of the ONE active applied domain.
+
+    "Unresolved" = the first not-yet-measured trait, in list order (the order
+    IS the program sequence — domain_traits is expected pre-sorted by the
+    domain's own scale, e.g. threshold characteristics before growth ones).
+    A domain with no unresolved trait (everything measured or dormant) has no
+    active step today — returns None, not a guess.
+
+    Returns (domain, characteristic, reason) or None if no domain is active.
+    """
+    if not domain_traits:
+        return None
+
+    active_domain = domain_traits[0].domain
+    for trait in domain_traits:
+        if trait.domain != active_domain:
+            continue  # one active domain per day — program order is not skipped across domains
+        if trait.status == "dormant-no-source":
+            continue  # failed the 6-point activation checklist — not offered
+        if trait.status != "measured":
+            return trait.domain, trait.characteristic, (
+                f"прикладной трек «{trait.domain}»: следующий нерешённый шаг «{trait.characteristic}»"
+            )
+
+    return None  # every trait of the active domain is already measured or dormant
+
+
+def _build_applied_section(domain: str, characteristic: str, worldview_area: int) -> dict:
+    """Builds the daily applied-mastery mini-section (Объединение №1, WP-495 Ф3).
+
+    `link_mode` names how the connection to the worldview lesson should be
+    shown, per the decided model: either through the lesson's theme, or as an
+    adjacent related case. The exact choice of framing text is prompt.md's
+    job (LLM stage) — the planner only supplies the deterministic skeleton.
+    """
+    return {
+        "domain": domain,
+        "characteristic": characteristic,
+        "link_mode": "theme_lens",  # shown through the worldview lesson's theme, by default
+        "worldview_area": worldview_area,
+        "note": "мини-секция дополняет мыслительный урок, не заменяет и не продвигает программу автоматически",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Main function
 # ---------------------------------------------------------------------------
 
@@ -869,6 +922,11 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
 
     mastery_by_area comes from ctx.mastery_by_area.
     recent_history stays [] — the domain_event → RecentLesson conversion is deferred.
+
+    ctx.domain_traits (Ф5b, applied track) has no production adapter yet — no
+    caller populates it from a real source (e.g. characteristics/*.yaml on
+    disk). Only tests set it directly. Wiring a real adapter is a separate,
+    not-yet-scheduled step (pilot decides which domain goes first).
     """
     from horizons import HorizonContext
 
@@ -971,6 +1029,15 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
         "notes": ctx.day.notes,
     }
 
+    # Applied track (Ф5b): the daily mini-section, alongside the worldview lesson
+    # above — never replacing it. domain_traits absent/empty → section stays
+    # off, same honest-absence principle as the rest of the planner (no guess).
+    domain_step = _choose_domain_step(ctx.domain_traits)
+    applied_section = (
+        _build_applied_section(domain_step[0], domain_step[1], primary_area)
+        if domain_step else None
+    )
+
     decision_log = {
         "bottleneck": bottleneck,
         "primary_area": f"{primary_area} ({AREA_NAMES.get(primary_area, '?')})",
@@ -981,6 +1048,7 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
         "tomatoes": tomatoes,
         "trigger": f"{ctx.trigger.kind}: {ctx.trigger.detail}",
         "rcs_stage": rcs.stage_derived,
+        "applied_track": domain_step[2] if domain_step else "нет активного домена — секция отсутствует",
     }
 
     return {
@@ -991,6 +1059,7 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
             "area": primary_area,
             "target_depth": target_depth,
             "tomatoes": tomatoes,
+            "applied_section": applied_section,
         },
         "horizon_context": {
             "quarter": quarter_block,

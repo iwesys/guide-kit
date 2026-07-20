@@ -7,6 +7,7 @@ lesson stays the primary daily focus, the applied section only supplements it.
 """
 
 import pytest
+from adapter import build_horizon_context
 from planner import plan_horizon, _choose_domain_step
 from horizons import RCSProfile, HorizonContext, OrchestratorTrigger, DomainTrait, DOMAIN_TRAIT_STATUSES
 
@@ -129,3 +130,52 @@ class TestPlanHorizonAppliedTrack:
         ctx = _make_ctx(domain_traits=traits)
         result = plan_horizon(ctx, seed=0)
         assert result["plan_skeleton"]["applied_section"] is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# build_horizon_context — profile.yaml domain_traits → HorizonContext (Ф5b adapter)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestBuildHorizonContextDomainTraits:
+    def test_missing_domain_traits_key_yields_empty_list(self):
+        ctx = build_horizon_context({})
+        assert ctx.domain_traits == []
+
+    def test_domain_traits_parsed_from_profile_dicts(self):
+        profile = {
+            "domain_traits": [
+                {"characteristic": "stroke_efficiency", "domain": "swimming", "status": "measured", "rung": 1},
+                {"characteristic": "water_comfort", "domain": "swimming", "status": "no_source_yet"},
+            ]
+        }
+        ctx = build_horizon_context(profile)
+        assert len(ctx.domain_traits) == 2
+        assert ctx.domain_traits[0] == DomainTrait(
+            characteristic="stroke_efficiency", domain="swimming", status="measured", rung=1
+        )
+        assert ctx.domain_traits[1].status == "no_source_yet"
+
+    def test_domain_trait_with_invalid_status_fails_loud(self):
+        """Same hard-fail as constructing DomainTrait directly — a typo'd status
+        in profile.yaml must not silently pass through the adapter as valid."""
+        profile = {"domain_traits": [{"characteristic": "x", "domain": "y", "status": "Measured"}]}
+        with pytest.raises(ValueError):
+            build_horizon_context(profile)
+
+    def test_structurally_broken_entry_skipped_not_crashed(self):
+        """Unlike an invalid status, a structurally broken entry (missing
+        'characteristic', or not a dict at all) degrades honestly — same
+        posture as malformed YAML elsewhere in this file (_read_yaml) — instead
+        of a bare KeyError/TypeError with no diagnostic (found by cold-context
+        review: this field was the one place in build_horizon_context that
+        crashed raw instead of logging + skipping)."""
+        profile = {
+            "domain_traits": [
+                {"domain": "swimming", "status": "measured"},  # missing 'characteristic'
+                "swimming",  # not a dict at all
+                {"characteristic": "water_comfort", "domain": "swimming", "status": "no_source_yet"},
+            ]
+        }
+        ctx = build_horizon_context(profile)
+        assert len(ctx.domain_traits) == 1
+        assert ctx.domain_traits[0].characteristic == "water_comfort"

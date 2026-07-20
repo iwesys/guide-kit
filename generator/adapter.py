@@ -25,6 +25,7 @@ import yaml
 from horizons import (
     ArtifactsSummary,
     DayEvents,
+    DomainTrait,
     HorizonContext,
     MonthThemes,
     OrchestratorTrigger,
@@ -304,6 +305,21 @@ def _from_dict_safe(cls, d: dict):
     return cls(**{k: v for k, v in d.items() if k in known})
 
 
+def _parse_domain_traits(raw: list) -> list[DomainTrait]:
+    """Structurally broken entries (not a dict, missing 'characteristic'/'domain') get
+    the same honest-degradation treatment as the rest of this file (see _read_yaml):
+    log + skip that entry, don't crash the whole profile. An invalid *status*
+    (a typo like 'Measured') stays loud — DomainTrait.__post_init__'s ValueError
+    is intentional (Ф5b: a misspelled status must not silently pass as active)."""
+    traits = []
+    for entry in raw:
+        try:
+            traits.append(DomainTrait.from_dict(entry))
+        except (TypeError, KeyError) as e:
+            logger.error("malformed domain_traits entry %r: %s — skipping", entry, e)
+    return traits
+
+
 def build_horizon_context(profile: dict) -> HorizonContext:
     """profile.yaml (2.1-2.4 axes) → HorizonContext. An empty profile → RCSProfile() + empty horizons."""
     rcs_dict = profile.get("rcs") or {}
@@ -323,6 +339,7 @@ def build_horizon_context(profile: dict) -> HorizonContext:
         day=_from_dict_safe(DayEvents, profile.get("day") or {}),
         artifacts=_from_dict_safe(ArtifactsSummary, profile.get("artifacts") or {}),
         mastery_by_area=profile.get("mastery_by_area") or {},
+        domain_traits=_parse_domain_traits(profile.get("domain_traits") or []),
         pilot_reflection=profile.get("pilot_reflection", ""),
         reflection_learned=profile.get("reflection_learned") or [],
         tomorrow_intention=profile.get("tomorrow_intention", ""),

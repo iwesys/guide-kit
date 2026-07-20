@@ -179,3 +179,14 @@ class TestBuildHorizonContextDomainTraits:
         ctx = build_horizon_context(profile)
         assert len(ctx.domain_traits) == 1
         assert ctx.domain_traits[0].characteristic == "water_comfort"
+
+    def test_non_list_domain_traits_yields_empty_not_crashed(self):
+        """domain_traits itself (not an entry inside it) being the wrong shape —
+        a number, a bare string, a dict instead of a list — must not crash
+        build_horizon_context either (found by independent review: iterating
+        a non-list either threw TypeError before entering the per-entry
+        try/except, or silently produced junk per-character/per-key log lines
+        instead of one clear diagnostic)."""
+        for bad_value in (42, "swimming", {"characteristic": "x"}):
+            ctx = build_horizon_context({"domain_traits": bad_value})
+            assert ctx.domain_traits == []

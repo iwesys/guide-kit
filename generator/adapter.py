@@ -305,12 +305,20 @@ def _from_dict_safe(cls, d: dict):
     return cls(**{k: v for k, v in d.items() if k in known})
 
 
-def _parse_domain_traits(raw: list) -> list[DomainTrait]:
+def _parse_domain_traits(raw) -> list[DomainTrait]:
     """Structurally broken entries (not a dict, missing 'characteristic'/'domain') get
     the same honest-degradation treatment as the rest of this file (see _read_yaml):
     log + skip that entry, don't crash the whole profile. An invalid *status*
     (a typo like 'Measured') stays loud — DomainTrait.__post_init__'s ValueError
-    is intentional (Ф5b: a misspelled status must not silently pass as active)."""
+    is intentional (Ф5b: a misspelled status must not silently pass as active).
+
+    A non-list `domain_traits` (e.g. a number or a bare dict — a plausible
+    YAML authoring mistake) gets the same treatment at the container level,
+    not just per-entry: one clear log, not a crash or per-character/per-key
+    junk from iterating something that isn't a list of records."""
+    if not isinstance(raw, list):
+        logger.error("domain_traits is not a list (got %s) — treating as empty", type(raw).__name__)
+        return []
     traits = []
     for entry in raw:
         try:

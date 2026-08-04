@@ -185,6 +185,21 @@ If the agenda is empty (no section in the prompt / no `strategy_inputs`), skip t
 
 If `week_focus` is set but no task in `active_wp` fits the lesson's topic, still insert "Применить сегодня к: <week_focus> — ..." (the week's general focus instead of a specific task).
 
+**5.7 Fix the reader and assertion carrier**
+
+Before writing the lesson, derive the concrete reader from `dominant_role`, `domain`, `state`, `target_depth`, and the current agenda. Do not address an abstract audience.
+
+For every key assertion in `core`, make clear:
+- who or what carries the claimed action or property;
+- which relation is asserted;
+- under which circumstances it applies.
+
+Choose the precision mode:
+- `exploratory` for a lesson that opens hypotheses; mark assumptions and do not present alternatives as a decision;
+- `precise` for a lesson that prescribes practice; name the observable result carrier and the student's next work.
+
+The lesson's next learning move must be visible in `practice`. If the lesson is regenerated after reviewer comments, it requires a new review; do not treat the edit itself as acceptance.
+
 ### Step 6. Adapt
 
 **6.1 Domain adaptation**
@@ -294,6 +309,10 @@ Return **only** the following JSON, no markdown fences, no text before or after.
 - [ ] All fields are present (nothing missing)
 - [ ] `core` contains an example through the student's domain
 - [ ] `practice` is concrete: there's what to do + when + how much
+- [ ] The concrete reader is recoverable from role, domain, state and depth
+- [ ] Every key assertion in `core` has a carrier, relation and applicability conditions
+- [ ] `practice` states the next learning move and an observable result carrier
+- [ ] Exploratory hypotheses are not presented as accepted decisions
 - [ ] `it_scaffolding` matches the `it_level` from context
 - [ ] The JSON is valid (no unclosed strings, no trailing comma)
 

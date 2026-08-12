@@ -15,6 +15,7 @@ import dataclasses
 import json
 import logging
 import os
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -477,6 +478,23 @@ def render_markdown(
 # Orchestration
 # ---------------------------------------------------------------------------
 
+_JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*\n(.*)\n```\s*$", re.DOTALL)
+
+
+def _strip_json_fences(text: str) -> str:
+    """Strip a single leading/trailing markdown code fence, if present.
+
+    The system prompt (prompt.md) explicitly forbids fences, but models
+    wrap JSON in ```json ... ``` anyway often enough that a live run hit
+    it on the first try (found 2026-08-12, mocked tests never exercise
+    real model output). Only strips a fence that wraps the *entire*
+    response — leaves unrelated text alone so json.loads still reports
+    a real parse failure for actually malformed output.
+    """
+    match = _JSON_FENCE_RE.match(text.strip())
+    return match.group(1) if match else text
+
+
 @dataclass
 class GuideResult:
     ok: bool
@@ -586,7 +604,7 @@ def generate_daily_plan(
         )
 
     try:
-        llm_output = json.loads(llm_result.text)
+        llm_output = json.loads(_strip_json_fences(llm_result.text))
     except json.JSONDecodeError as e:
         logger.error("LLM output is not valid JSON: %s", e)
         return GuideResult(

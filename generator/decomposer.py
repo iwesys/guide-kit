@@ -52,6 +52,11 @@ class DecompositionResult:
     local_axis: Optional[Dict[str, str]] = None  # "section-01": "oop.inheritance"
     source_hash: str = ""  # SHA для отслеживания версий
     decomposed_at: str = ""  # ISO timestamp
+    # Audit trail of why the graph looks the way it does — dropped cycles, skipped
+    # sections, empty input. The module docstring and decompose_topic() both promise
+    # it as part of the output, and the repo's Trust Stack requires legible reasoning,
+    # but until now it lived only on the Decomposer instance and died with it.
+    decision_log: List[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -62,6 +67,7 @@ class DecompositionResult:
             "local_axis": self.local_axis,
             "source_hash": self.source_hash,
             "decomposed_at": self.decomposed_at,
+            "decision_log": self.decision_log,
         }
 
 
@@ -113,6 +119,7 @@ class Decomposer:
             local_axis=self.local_axis if self.local_axis else None,
             source_hash=source_hash,
             decomposed_at=datetime.utcnow().isoformat(),
+            decision_log=list(self.decision_log),
         )
 
     def _validate_input(self) -> None:
@@ -130,11 +137,20 @@ class Decomposer:
         if self.topic_data.get("mode") not in ("B", "V"):
             self._log_decision(f"warn: mode={self.topic_data['mode']} (expected B or V)", "validation")
 
-        # Режим В должен иметь search_criteria, Б должен иметь sections
+        # Режим В должен иметь search_criteria, Б должен иметь sections.
+        # An ABSENT key is a malformed topic.yaml — the author never declared the
+        # structure, nothing can be built, so it fails loudly. A PRESENT but empty
+        # list is a different thing: the structure was declared and turned out to
+        # hold nothing (a source that decomposed to zero sections). That is a
+        # degenerate result to report, not a crash — _parse_sections already has
+        # the "WARN: no sections found" branch for it, which used to be dead code
+        # because this check raised first.
         if self.topic_data.get("mode") == "B":
-            if "sections" not in self.topic_data or not self.topic_data["sections"]:
+            if "sections" not in self.topic_data:
                 self._log_decision("FAIL: mode=B requires 'sections' field", "validation")
                 raise ValueError("Mode B (source named) requires 'sections' in topic.yaml")
+            if not self.topic_data["sections"]:
+                self._log_decision("WARN: mode=B with no sections — empty decomposition", "validation")
 
         self._log_decision("Input validated OK", "validation")
 

@@ -444,6 +444,46 @@ def _get_recent_element_ids(recent: list[RecentLesson], n: int = 5) -> set[str]:
     return {r.element_id for r in recent[:n]}
 
 
+# Area order used to break ties when falling back to another area — the planner
+# must be deterministic for the same input (same seed → same plan).
+_AREA_KEYS_BY_INDEX = ["knowledge", "tools", "constraints", "environment", "organism"]
+
+
+def _area_has_elements(area: int, stage: int) -> bool:
+    """True if some catalog can serve this area at this stage."""
+    for meta in {**CAT002_ELEMENTS, **CAT003_ELEMENTS}.values():
+        if meta["area"] == area and meta["entry_stage"] <= stage:
+            return True
+    for meta in _load_cat001().values():
+        if meta.get("area") == area and meta.get("entry_stage", 1) <= stage:
+            return True
+    return False
+
+
+def _nearest_servable_area(
+    primary_area: int, stage: int, mastery_by_area: dict[str, int]
+) -> tuple[int | None, str]:
+    """Pick a replacement area when `primary_area` has nothing in any catalog.
+
+    Preference is the same one _choose_area uses when it works normally — the
+    largest remaining gap (4 - depth), so real progress data (including the
+    interim LMS snapshot) still steers the choice. Ties break on the lower area
+    number, so the plan stays reproducible for a given seed.
+
+    Returns (area, reason) or (None, reason) when no area can be served at all —
+    the caller then keeps the empty skeleton, exactly as before this fallback.
+    """
+    servable = [a for a in range(1, 6) if a != primary_area and _area_has_elements(a, stage)]
+    if not servable:
+        return None, "ни одна область не обслуживается каталогом"
+    best = max(
+        servable,
+        key=lambda a: (4 - mastery_by_area.get(_AREA_KEYS_BY_INDEX[a - 1], 0), -a),
+    )
+    depth = mastery_by_area.get(_AREA_KEYS_BY_INDEX[best - 1], 0)
+    return best, f"замена на area={best} (gap={4 - depth}, обслуживается каталогом)"
+
+
 def _choose_element_worldview(
     area: int,
     stage: int,
@@ -984,6 +1024,35 @@ def plan_horizon(ctx: "HorizonContext", seed: int | None = None) -> dict:
                 element_id, raw_depth, element_reason = _choose_element_mastery(
                     primary_area, stage_code, recent_ids, mastery_gaps, mastery_by_area, []
                 )
+
+    # Cross-area fallback: both catalogs are empty FOR THIS AREA, so no amount of
+    # retrying inside it can help. Without this the planner hands prompt.md an
+    # empty skeleton and the LLM improvises the whole lesson — which is exactly
+    # what happens today for the most common profile there is: the default RCS
+    # bottleneck is M1, _SLOT_TO_AREA maps M1 to area 3 (Ограничения), and area 3
+    # has no CAT.002/003 practices at all, while CAT.001 stays empty whenever
+    # GUIDE_KIT_CURRICULUM_PATH is unset. Pick the nearest area that can actually
+    # be served instead of serving nothing.
+    if element_id is None:
+        fallback_area, fallback_reason = _nearest_servable_area(
+            primary_area, stage_code, mastery_by_area
+        )
+        if fallback_area is not None:
+            element_id, raw_depth, element_reason = _choose_element_mastery(
+                fallback_area, stage_code, recent_ids, mastery_gaps, mastery_by_area, []
+            )
+            impact_type = "mastery"
+            if element_id is None:
+                element_id, raw_depth, element_reason = _choose_element_worldview(
+                    fallback_area, stage_code, recent_ids, worldview_gaps, mastery_by_area, []
+                )
+                impact_type = "worldview"
+            if element_id is not None:
+                element_reason = (
+                    f"area={primary_area} не обслуживается каталогом → {fallback_reason}; "
+                    f"{element_reason}"
+                )
+                primary_area = fallback_area
 
     # Mastery-gate: do not raise the depth without passing the can-do check (P5 fix)
     if element_id:

@@ -28,9 +28,25 @@ same way, in its own docstring -- following that precedent over introducing a ne
 artifact type for a one-field naming call.
 """
 
+import json
+
 from recommendation_registry import RawV0Candidate, compute_content_hash
 
 CLUB_POST_SELECTION_BASIS = "connected_source"
+
+# Path B (programmatic selection): material_selector.py's catalogs carry no
+# lesson prose, only a short assignment recipe (seed_id/bottleneck/domain/
+# priority/description/covers_gaps) -- there is nothing resembling delivered
+# text to hash at selection time. content_hash for this type hashes the
+# recipe itself instead: re-selecting the same catalog entry always yields
+# the same hash, and editing the catalog entry always changes it, even
+# though two separate AI renders of the same recipe's lesson text would not
+# (that's the intended dedup semantics, not a limitation to work around).
+PROGRAM_FRAGMENT_SELECTION_BASIS = "bottleneck"
+# Keep in sync with the same-named tuple in DS-autonomous-agents/scripts/material_selector.py
+# (separate repo, no shared import) — a field added only there silently drops out of the
+# hash here instead of raising, since the dict comprehension below ignores unknown keys.
+_RECIPE_PAYLOAD_FIELDS = ("seed_id", "bottleneck", "domain", "priority", "description", "covers_gaps")
 
 
 def build_club_post_candidate(post: dict) -> RawV0Candidate:
@@ -44,5 +60,26 @@ def build_club_post_candidate(post: dict) -> RawV0Candidate:
         source_ref_ref=str(post["discourse_topic_id"]),
         selection_basis=CLUB_POST_SELECTION_BASIS,
         content_hash=compute_content_hash(post["content"]),
+        topic_ref=None,
+    )
+
+
+def build_program_fragment_candidate(fragment: dict) -> RawV0Candidate:
+    """
+    fragment: the frozen six-field recipe payload for one selected catalog
+    entry, as returned by material_selector.py's collect_fragment_payload()
+    (DS-autonomous-agents) -- keys: seed_id, bottleneck, domain, priority,
+    description, covers_gaps.
+    """
+    recipe = json.dumps(
+        {field: fragment[field] for field in _RECIPE_PAYLOAD_FIELDS},
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return RawV0Candidate(
+        source_ref_type="program_fragment",
+        source_ref_ref=fragment["seed_id"],
+        selection_basis=PROGRAM_FRAGMENT_SELECTION_BASIS,
+        content_hash=compute_content_hash(recipe),
         topic_ref=None,
     )

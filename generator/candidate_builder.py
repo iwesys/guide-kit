@@ -43,6 +43,9 @@ CLUB_POST_SELECTION_BASIS = "connected_source"
 # though two separate AI renders of the same recipe's lesson text would not
 # (that's the intended dedup semantics, not a limitation to work around).
 PROGRAM_FRAGMENT_SELECTION_BASIS = "bottleneck"
+# Keep in sync with the same-named tuple in DS-autonomous-agents/scripts/material_selector.py
+# (separate repo, no shared import) — a field added only there silently drops out of the
+# hash here instead of raising, since the dict comprehension below ignores unknown keys.
 _RECIPE_PAYLOAD_FIELDS = ("seed_id", "bottleneck", "domain", "priority", "description", "covers_gaps")
 
 

@@ -577,3 +577,23 @@ class TestHardeningFoundByIndependentReview:
         assert check.execute("SELECT COUNT(*) FROM recommendation").fetchone() == (1,)
         assert check.execute("SELECT COUNT(*) FROM request").fetchone() == (1,)
         check.close()
+
+
+class TestReplayRequest:
+    def test_unknown_key_returns_none_and_stores_nothing(self):
+        registry = RecommendationRegistry(":memory:", clock=FakeClock())
+        assert registry.replay_request("p-1", "req-1", PARAMS) is None
+        assert registry._conn.execute("SELECT COUNT(*) FROM request").fetchone() == (0,)
+
+    def test_known_key_returns_the_stored_outcome_whatever_method_it_holds(self):
+        registry = RecommendationRegistry(":memory:", clock=FakeClock())
+        first = registry.request_recommendation("p-1", "req-1", PARAMS, "sha256:x", "LMS.M.026")
+        again = registry.replay_request("p-1", "req-1", PARAMS)
+        assert again.replayed is True
+        assert (again.recommendation_ref, again.method_code) == (first.recommendation_ref, "LMS.M.026")
+
+    def test_known_key_with_other_params_is_a_conflict(self):
+        registry = RecommendationRegistry(":memory:", clock=FakeClock())
+        registry.refuse_request("p-1", "req-1", PARAMS, "no_verifiable_method")
+        with pytest.raises(RequestConflict):
+            registry.replay_request("p-1", "req-1", {**PARAMS, "probe": "edited"})

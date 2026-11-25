@@ -370,6 +370,23 @@ class RecommendationRegistry:
         _require_ascii_code("reason_code", reason_code)
         return self._open_request(person_id, request_id, params, OUTCOME_REFUSED, reason_code=reason_code)
 
+    def replay_request(self, person_id: str, request_id: str, params: dict) -> Optional[RequestResult]:
+        """
+        The stored outcome for this key, or None when the key is new. A key that exists with other
+        parameters raises RequestConflict. Unlike request_recommendation it takes no method, so a
+        caller can replay before it selects anything (a retry must not depend on today's selection).
+        """
+        with self._lock:
+            row = self._request_row(person_id, request_id)
+            if row is None:
+                return None
+            stored_request, outcome, recommendation_ref, method_code, reason_code = row
+            if json.loads(stored_request)["params"] != json.loads(_canonical_json(params)):
+                raise RequestConflict(f"{person_id}/{request_id}: request_id reused with different parameters")
+            return RequestResult(
+                person_id, request_id, outcome, recommendation_ref, method_code, reason_code, replayed=True
+            )
+
     def state_of(self, recommendation_ref: str) -> str:
         with self._lock:
             return self._row(recommendation_ref)[1]

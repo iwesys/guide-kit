@@ -277,13 +277,14 @@ class TestReplayHonesty:
         assert FLAG_MATERIAL_CHANGED in again.flags
         assert again.method is None
 
-    def test_same_material_under_a_new_catalog_revision_counts_as_changed(self, snapshot):
+    def test_same_material_under_a_new_catalog_revision_is_not_a_change(self, snapshot):
         registry = RecommendationRegistry(":memory:", clock=FakeClock())
-        RecommendationFlow(registry, snapshot).request("p-1", "req-1", PARAMS)
+        first = RecommendationFlow(registry, snapshot).request("p-1", "req-1", PARAMS)
         again = RecommendationFlow(registry, CatalogSnapshot("rev-2", snapshot.methods)).request("p-1", "req-1", PARAMS)
-        assert FLAG_MATERIAL_CHANGED in again.flags
+        assert FLAG_MATERIAL_CHANGED not in again.flags
+        assert again.method is not None and again.method.next_action == first.method.next_action
 
-    def test_raw_ref_depends_on_material_and_on_revision(self, snapshot):
+    def test_raw_ref_depends_on_the_material_texts_not_on_the_revision(self, snapshot):
         def raw_ref_for(snap):
             registry = RecommendationRegistry(":memory:", clock=FakeClock())
             return RecommendationFlow(registry, snap).request("p-1", "req-1", PARAMS).result.raw_ref
@@ -293,7 +294,7 @@ class TestReplayHonesty:
         other_text = dict(snapshot.methods)
         other_text["M.052"] = Method("M.052", "core", 0, (), "another next action", "another criterion")
         assert raw_ref_for(CatalogSnapshot("rev-1", other_text)) != base
-        assert raw_ref_for(CatalogSnapshot("rev-2", snapshot.methods)) != base
+        assert raw_ref_for(CatalogSnapshot("rev-2", snapshot.methods)) == base
 
     def test_method_without_material_in_the_new_snapshot_is_flagged_unavailable(self, snapshot):
         registry = RecommendationRegistry(":memory:", clock=FakeClock())

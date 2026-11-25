@@ -27,7 +27,7 @@ outcome without selecting again, so it never depends on today's history, and two
 requests racing each other both get the one stored outcome. The set of methods the person
 already passed is not part of the key: a retry with another set still returns the stored outcome.
 If the catalog snapshot changed since the first request so that the method's material no longer
-matches the stored hash, the replay says so (`material_changed`) and returns no texts: a person
+matches the stored hash, the replay says so (`material_changed`; the catalog revision alone does not count) and returns no texts: a person
 is never shown a text that differs from the one registered; a new calculation needs a new
 request_id. A recommendation that expired or failed is returned with its state and the flag
 `recommendation_not_live`.
@@ -142,13 +142,15 @@ def eligible_methods(snapshot: CatalogSnapshot, done_codes: frozenset) -> list:
     return sorted(candidates, key=lambda m: (m.order, m.code))
 
 
-def _raw_ref(method: Method, snapshot: CatalogSnapshot) -> str:
+def _raw_ref(method: Method) -> str:
+    """Hash of what the person is shown. The catalog revision is deliberately not part of it: the
+    catalog is edited often, and a new revision with the same texts must not turn every retry of an
+    earlier request into `material_changed`."""
     payload = json.dumps(
         {
             "method": method.code,
             "next_action": method.next_action,
             "criterion": method.criterion,
-            "catalog_revision": snapshot.source_revision,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -200,7 +202,7 @@ class RecommendationFlow:
             return self._registry.refuse_request(person_id, request_id, key_params, reason)
         chosen = fresh[0]
         return self._registry.request_recommendation(
-            person_id, request_id, key_params, _raw_ref(chosen, self._snapshot), chosen.code
+            person_id, request_id, key_params, _raw_ref(chosen), chosen.code
         )
 
     def _outcome(self, result: RequestResult, slot: Optional[str], slot_cut_date: Optional[str]) -> FlowOutcome:
@@ -214,7 +216,7 @@ class RecommendationFlow:
             if method is None or not method.has_material:
                 flags.append(FLAG_MATERIAL_UNAVAILABLE)
                 method = None
-            elif _raw_ref(method, self._snapshot) != result.raw_ref:
+            elif _raw_ref(method) != result.raw_ref:
                 flags.append(FLAG_MATERIAL_CHANGED)
                 method = None
             if state in (EXPIRED, FAILED):

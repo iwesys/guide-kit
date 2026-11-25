@@ -157,6 +157,7 @@ class RequestResult:
     method_code: Optional[str]
     reason_code: Optional[str]
     replayed: bool
+    raw_ref: Optional[str] = None  # the raw_ref stored with the recommendation; None for a refusal
 
 
 def _utc_now_iso() -> str:
@@ -285,20 +286,26 @@ class RecommendationRegistry:
 
     def _request_row(self, person_id: str, request_id: str) -> Optional[tuple]:
         return self._conn.execute(
-            "SELECT request_json, outcome, recommendation_ref, method_code, reason_code "
-            "FROM request WHERE person_id = ? AND request_id = ?",
+            "SELECT r.request_json, r.outcome, r.recommendation_ref, r.method_code, r.reason_code, rec.raw_ref "
+            "FROM request r LEFT JOIN recommendation rec ON rec.recommendation_ref = r.recommendation_ref "
+            "WHERE r.person_id = ? AND r.request_id = ?",
             (person_id, request_id),
         ).fetchone()
 
+    @staticmethod
+    def _stored_result(person_id: str, request_id: str, row: tuple) -> RequestResult:
+        _request_json, outcome, recommendation_ref, method_code, reason_code, raw_ref = row
+        return RequestResult(
+            person_id, request_id, outcome, recommendation_ref, method_code, reason_code,
+            replayed=True, raw_ref=raw_ref,
+        )
+
     def _replay(self, person_id: str, request_id: str, request_json: str, row: tuple) -> RequestResult:
-        stored_request, outcome, recommendation_ref, method_code, reason_code = row
-        if stored_request != request_json:
+        if row[0] != request_json:
             raise RequestConflict(
                 f"{person_id}/{request_id}: request_id reused with different parameters, outcome or method"
             )
-        return RequestResult(
-            person_id, request_id, outcome, recommendation_ref, method_code, reason_code, replayed=True
-        )
+        return self._stored_result(person_id, request_id, row)
 
     def _open_request(
         self,
@@ -346,7 +353,8 @@ class RecommendationRegistry:
                     raise
                 return self._replay(person_id, request_id, request_json, row)
         return RequestResult(
-            person_id, request_id, outcome, recommendation_ref, method_code, reason_code, replayed=False
+            person_id, request_id, outcome, recommendation_ref, method_code, reason_code,
+            replayed=False, raw_ref=raw_ref,
         )
 
     def request_recommendation(
@@ -380,12 +388,9 @@ class RecommendationRegistry:
             row = self._request_row(person_id, request_id)
             if row is None:
                 return None
-            stored_request, outcome, recommendation_ref, method_code, reason_code = row
-            if json.loads(stored_request)["params"] != json.loads(_canonical_json(params)):
+            if json.loads(row[0])["params"] != json.loads(_canonical_json(params)):
                 raise RequestConflict(f"{person_id}/{request_id}: request_id reused with different parameters")
-            return RequestResult(
-                person_id, request_id, outcome, recommendation_ref, method_code, reason_code, replayed=True
-            )
+            return self._stored_result(person_id, request_id, row)
 
     def state_of(self, recommendation_ref: str) -> str:
         with self._lock:

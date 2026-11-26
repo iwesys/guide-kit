@@ -19,6 +19,7 @@ from recommendation_flow import (
     CatalogSnapshot,
     Method,
     RecommendationFlow,
+    _raw_ref,
     eligible_methods,
     load_catalog_snapshot,
     main,
@@ -26,6 +27,7 @@ from recommendation_flow import (
 from recommendation_registry import (
     CREATED,
     EXPIRED,
+    GROUNDING_CHECKED,
     ISSUED,
     OUTCOME_RECOMMENDATION,
     OUTCOME_REFUSED,
@@ -78,10 +80,8 @@ def _flow(snapshot, clock=None):
 
 
 def _show_and_confirm(flow, registry, outcome):
-    ref = outcome.result.recommendation_ref
-    registry.mark_grounding_checked(ref)
-    registry.mark_shown(ref)
-    return flow.confirm_delivery(ref, surface="morning-message")
+    """The caller's one step: `request` already recorded the check, `confirm` does the rest."""
+    return flow.confirm_delivery(outcome.result.recommendation_ref, surface="morning-message")
 
 
 class TestEligibility:
@@ -180,11 +180,28 @@ class TestRequest:
 
 
 class TestConfirmDelivery:
-    def test_confirmation_before_the_show_is_rejected_and_records_nothing(self, snapshot):
+    def test_confirmation_straight_after_the_request_issues_without_a_show_call(self, snapshot):
         flow, registry = _flow(snapshot)
         outcome = flow.request("p-1", "req-1", PARAMS)
+        assert outcome.state == GROUNDING_CHECKED
+        confirmation = flow.confirm_delivery(outcome.result.recommendation_ref, surface="telegram-morning")
+        assert confirmation.event is not None
+        assert registry.state_of(outcome.result.recommendation_ref) == ISSUED
+        assert registry.methods_issued_since("p-1") == {outcome.result.method_code}
+
+    def test_texts_that_no_longer_match_the_stored_hash_stay_created_and_cannot_be_confirmed(self, snapshot):
+        _, registry = _flow(snapshot)
+        # a recommendation stored by an older server version: opened, its check never recorded
+        old_method = snapshot.methods["M.052"]
+        key_params = {**PARAMS, "slot": None, "slot_cut_date": None}
+        stored = registry.request_recommendation("p-1", "req-1", key_params, _raw_ref(old_method), "M.052")
+        edited = Method("M.052", "core", 0, (), "an edited next step", "an edited criterion")
+        edited_flow = RecommendationFlow(registry, CatalogSnapshot("rev-4", {"M.052": edited}))
+        again = edited_flow.request("p-1", "req-1", PARAMS)
+        assert FLAG_MATERIAL_CHANGED in again.flags
+        assert again.state == CREATED
         with pytest.raises(TransitionRejected):
-            flow.confirm_delivery(outcome.result.recommendation_ref, surface="morning-message")
+            edited_flow.confirm_delivery(stored.recommendation_ref, surface="telegram-morning")
         assert registry.methods_issued_since("p-1") == set()
         assert registry.pending_events() == []
 
@@ -202,7 +219,6 @@ class TestConfirmDelivery:
         flow, registry = _flow(snapshot)
         outcome = flow.request("p-1", "req-1", PARAMS)
         ref = outcome.result.recommendation_ref
-        registry.mark_grounding_checked(ref)
         registry.mark_shown(ref)
         registry.expire(ref)
         with pytest.raises(TransitionRejected):
@@ -315,7 +331,6 @@ class TestReplayHonesty:
         flow, registry = _flow(snapshot)
         first = flow.request("p-1", "req-1", PARAMS)
         ref = first.result.recommendation_ref
-        registry.mark_grounding_checked(ref)
         registry.mark_shown(ref)
         registry.expire(ref)
         again = flow.request("p-1", "req-1", PARAMS)
@@ -325,7 +340,7 @@ class TestReplayHonesty:
     def test_live_recommendation_has_no_warning_flag(self, snapshot):
         flow, _ = _flow(snapshot)
         outcome = flow.request("p-1", "req-1", PARAMS)
-        assert outcome.state == CREATED
+        assert outcome.state == GROUNDING_CHECKED
         assert FLAG_NOT_LIVE not in outcome.flags
 
 
@@ -388,7 +403,7 @@ class TestShow:
     def test_show_resumes_after_a_crash_between_the_two_steps(self, snapshot):
         flow, registry = _flow(snapshot)
         ref = flow.request("p-1", "req-1", PARAMS).result.recommendation_ref
-        registry.mark_grounding_checked(ref)  # the process died before mark_shown
+        assert registry.state_of(ref) == GROUNDING_CHECKED  # the process died before mark_shown
         assert flow.show(ref) == SHOWN
 
     def test_show_after_issue_reports_issued_and_after_expiry_is_rejected(self, snapshot):
@@ -432,7 +447,7 @@ class TestCommandLine:
         issued = self._request(capsys, db, snapshot_file, "req-1", "--slot", "slot-a", "--slot-cut-date", "2026-11-20")
         ref = issued["recommendation_ref"]
         assert ref.startswith("rec_") and len(ref) == 40
-        assert issued["method_code"] == "M.052" and issued["state"] == "created"
+        assert issued["method_code"] == "M.052" and issued["state"] == "grounding_checked"
         assert issued["next_action"] == MATERIAL["next_action"]
         assert issued["criterion"] == MATERIAL["criterion"]
         assert (issued["slot"], issued["slot_cut_date"]) == ("slot-a", "2026-11-20")
@@ -441,8 +456,6 @@ class TestCommandLine:
         replay = self._request(capsys, db, snapshot_file, "req-1", "--slot", "slot-a", "--slot-cut-date", "2026-11-20")
         assert replay["replayed"] is True and replay["recommendation_ref"] == ref
 
-        assert self._run(capsys, *base, "show", "--ref", ref)["state"] == "shown"
-        assert self._run(capsys, *base, "show", "--ref", ref)["state"] == "shown"
         confirmed = self._run(capsys, *base, "confirm", "--ref", ref, "--surface", "morning-message", "--session-ref", "s-9")
         assert confirmed == {"recommendation_ref": ref, "state": "issued", "new": True}
         again = self._run(capsys, *base, "confirm", "--ref", ref, "--surface", "morning-message")
@@ -480,11 +493,13 @@ class TestCommandLine:
     def test_failures_print_one_json_object_with_a_stable_code(self, tmp_path, snapshot_file, capsys):
         db = str(tmp_path / "registry.db")
         self._run(capsys, "--db", db, "init")
-        issued = self._request(capsys, db, snapshot_file, "req-1")
+        unchecked = RecommendationRegistry(db).request_recommendation(
+            "p-1", "req-0", {"slot": None, "slot_cut_date": None}, "raw-0", "M.052"
+        )  # opened by an older version: its check was never recorded
         assert self._run(
-            capsys, "--db", db, "confirm", "--ref", issued["recommendation_ref"], "--surface", "s", expect=2
+            capsys, "--db", db, "confirm", "--ref", unchecked.recommendation_ref, "--surface", "s", expect=2
         )["error"] == "transition_rejected"
-        assert self._request(capsys, db, snapshot_file, "req-1", params={**PARAMS, "probe": "edited"}, expect=2)[
+        assert self._request(capsys, db, snapshot_file, "req-0", params={**PARAMS, "probe": "edited"}, expect=2)[
             "error"
         ] == "request_conflict"
         assert self._run(

@@ -7,8 +7,8 @@ Inputs and what is real today (peer session 2026-11-25):
 - Catalog snapshot: a JSON file built outside this repository (it carries method texts in the
   author's language, which this repository does not allow). Only methods with necessity "core",
   with material for the next action and the criterion, with every prerequisite already done by
-  the person, and not done themselves are eligible. Umbrella methods have no material of their
-  own, so they never are.
+  the person, and not done themselves are eligible. An umbrella method is eligible only when the
+  snapshot gives it material of its own.
 - Order among eligible methods: the catalog's own order field, then the code. That order is a
   working hypothesis of the catalog owners, not a rule; every recommendation carries the flag
   `selection_provisional` so a consumer never presents it as one.
@@ -18,8 +18,12 @@ Inputs and what is real today (peer session 2026-11-25):
 - Methods the person already passed (checklist): the mapping between checklist facts and catalog
   codes is not connected, so the caller passes an empty set; then a method with prerequisites is
   not eligible (a prerequisite is never assumed done).
-- Grounding gate (WP-498): not integrated. The `show` command records the check as passed on the
-  caller's word; it exists for the test stage and must be replaced by the real gate.
+- Grounding gate (WP-498): not integrated. Until it is, `request` records the check itself and
+  the only real check is that the shown texts still match the stored hash (a recommendation whose
+  texts changed stays `created` and cannot be confirmed). The caller makes one call, `confirm`,
+  which moves the state through shown to issued. The `show` command stays for the test stage and
+  records the check on the caller's word; the real gate replaces the recording inside `request`,
+  not the caller's call.
 
 Reason codes of a refusal: `no_verifiable_method`, `all_recently_issued`.
 Replay: a retry with the same (person_id, request_id) and the same parameters returns the stored
@@ -43,7 +47,7 @@ import json
 import os
 import sqlite3
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 from recommendation_registry import (
@@ -191,7 +195,22 @@ class RecommendationFlow:
                 stored = self._registry.replay_request(person_id, request_id, key_params)
                 if stored is None:
                     raise
-        return self._outcome(stored, slot, slot_cut_date)
+        return self._mark_grounded(self._outcome(stored, slot, slot_cut_date))
+
+    def _mark_grounded(self, outcome: FlowOutcome) -> FlowOutcome:
+        """
+        Record the grounding check for a recommendation whose shown texts still match the stored
+        hash (method is None otherwise, and the state stays `created`, so no confirm can follow).
+        Safe to repeat and to race: a recommendation already past `created` is left alone.
+        """
+        if outcome.state != CREATED or outcome.method is None:
+            return outcome
+        ref = outcome.result.recommendation_ref
+        try:
+            self._registry.mark_grounding_checked(ref)
+        except TransitionRejected:
+            pass  # an identical request marked it first; the state read below is the truth
+        return replace(outcome, state=self._registry.state_of(ref))
 
     def _issue_new(self, person_id: str, request_id: str, key_params: dict, done_codes: frozenset) -> RequestResult:
         candidates = eligible_methods(self._snapshot, done_codes)
@@ -245,10 +264,18 @@ class RecommendationFlow:
         self, recommendation_ref: str, surface: str, session_ref: Optional[str] = None
     ) -> DeliveryConfirmation:
         """
-        Confirm that the person was shown the recommendation. Raises TransitionRejected unless the
-        recommendation ends up issued, so a caller never reads "nothing returned" as success.
+        Confirm that the person was shown the recommendation: one step from the caller's side. The
+        grounding check was recorded by `request`; this call moves grounding_checked to shown and
+        then to issued. Raises TransitionRejected unless the recommendation ends up issued (for
+        example a state `created`, whose texts failed the check), so a caller never reads
+        "nothing returned" as success.
         """
-        event = self._registry.confirm_issued(recommendation_ref, surface=surface, session_ref=session_ref)
+        if self._registry.state_of(recommendation_ref) == GROUNDING_CHECKED:
+            try:
+                self._registry.mark_shown(recommendation_ref)
+            except TransitionRejected:
+                pass  # a parallel confirm moved it first; the issue step below decides the outcome
+        event =self._registry.confirm_issued(recommendation_ref, surface=surface, session_ref=session_ref)
         state = self._registry.state_of(recommendation_ref)
         if state != ISSUED:
             raise TransitionRejected(f"{recommendation_ref}: delivery not confirmed, state is {state}")

@@ -25,6 +25,15 @@ Inputs and what is real today (peer session 2026-11-25):
   records the check on the caller's word; the real gate replaces the recording inside `request`,
   not the caller's call.
 
+Short action (pilot decision 27.11, WP-622 I-32): the morning message shows the method as one line
+of at most SHORT_ACTION_MAX characters, so a snapshot may carry `short_action`, a short version of
+the next action written by the catalog owner. It is optional: a method without it is still eligible
+and the response carries null, and the caller then shows no method line. A short action over the
+limit or spanning lines makes the snapshot invalid. The length is counted the way the caller counts
+it, after collapsing runs of whitespace into one space (the caller's limit is the same, kept in sync by
+hand); the text itself is returned and hashed as written. It is part of the shown texts, so it is part of the hash; a method without it hashes exactly
+as before the field existed, so earlier requests replay unchanged.
+
 Reason codes of a refusal: `no_verifiable_method`, `all_recently_issued`.
 Replay: a retry with the same (person_id, request_id) and the same parameters returns the stored
 outcome without selecting again, so it never depends on today's history, and two identical
@@ -75,6 +84,7 @@ FLAG_MATERIAL_UNAVAILABLE = "material_unavailable"
 FLAG_MATERIAL_CHANGED = "material_changed"
 FLAG_NOT_LIVE = "recommendation_not_live"
 WINDOW_DAYS = 7
+SHORT_ACTION_MAX = 80  # keep in sync with MAX_METHOD_CHARS of the morning message reader (WP-623)
 RESERVED_PARAM_KEYS = ("slot", "slot_cut_date")
 
 
@@ -86,6 +96,7 @@ class Method:
     prerequisites: tuple
     next_action: Optional[str]
     criterion: Optional[str]
+    short_action: Optional[str] = None
 
     @property
     def has_material(self) -> bool:
@@ -114,6 +125,18 @@ class DeliveryConfirmation:
     event: Optional[RecommendationIssued]  # None: delivery was already confirmed by an earlier call
 
 
+def _short_action(material: dict, code: str) -> Optional[str]:
+    value = material.get("short_action")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip() or "\n" in value or "\r" in value:
+        raise ValueError(f"{code}: short_action must be one non-empty line")
+    shown_length = len(" ".join(value.split()))  # how the morning message reader counts it (WP-623)
+    if shown_length > SHORT_ACTION_MAX:
+        raise ValueError(f"{code}: short_action has {shown_length} characters, the limit is {SHORT_ACTION_MAX}")
+    return value
+
+
 def load_catalog_snapshot(path: str) -> CatalogSnapshot:
     with open(path, encoding="utf-8") as handle:
         raw = json.load(handle)
@@ -129,6 +152,7 @@ def load_catalog_snapshot(path: str) -> CatalogSnapshot:
             prerequisites=tuple(entry.get("prerequisites", [])),
             next_action=material.get("next_action"),
             criterion=material.get("criterion"),
+            short_action=_short_action(material, entry["code"]),
         )
     return CatalogSnapshot(source_revision=raw["source_revision"], methods=methods)
 
@@ -149,13 +173,17 @@ def eligible_methods(snapshot: CatalogSnapshot, done_codes: frozenset) -> list:
 def _raw_ref(method: Method) -> str:
     """Hash of what the person is shown. The catalog revision is deliberately not part of it: the
     catalog is edited often, and a new revision with the same texts must not turn every retry of an
-    earlier request into `material_changed`."""
+    earlier request into `material_changed`. The short action enters only when present, so a method
+    without one keeps the hash it had before the field existed."""
+    shown = {
+        "method": method.code,
+        "next_action": method.next_action,
+        "criterion": method.criterion,
+    }
+    if method.short_action is not None:
+        shown["short_action"] = method.short_action
     payload = json.dumps(
-        {
-            "method": method.code,
-            "next_action": method.next_action,
-            "criterion": method.criterion,
-        },
+        shown,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -294,6 +322,7 @@ def _outcome_json(outcome: FlowOutcome) -> dict:
         "reason_code": result.reason_code,
         "next_action": method.next_action if method else None,
         "criterion": method.criterion if method else None,
+        "short_action": method.short_action if method else None,
         "slot": outcome.slot,
         "slot_cut_date": outcome.slot_cut_date,
         "flags": list(outcome.flags),

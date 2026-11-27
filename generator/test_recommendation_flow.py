@@ -16,6 +16,7 @@ from recommendation_flow import (
     FLAG_SLOT_UNKNOWN,
     REASON_ALL_RECENT,
     REASON_NO_METHOD,
+    SHORT_ACTION_MAX,
     CatalogSnapshot,
     Method,
     RecommendationFlow,
@@ -35,6 +36,7 @@ from recommendation_registry import (
     RequestConflict,
     SHOWN,
     TransitionRejected,
+    compute_content_hash,
 )
 from test_recommendation_registry import FakeClock
 
@@ -520,3 +522,85 @@ class TestCommandLine:
         garbage = tmp_path / "garbage.db"
         garbage.write_bytes(b"this is not a sqlite database at all" * 40)
         assert self._run(capsys, "--db", str(garbage), "events", expect=2)["error"] == "database_error"
+
+
+class TestShortAction:
+    """The one-line short action of a method (pilot decision 27.11): optional, limited, hashed."""
+
+    def _load(self, tmp_path, material):
+        path = tmp_path / "catalog.json"
+        path.write_text(
+            json.dumps({"source_revision": "r", "methods": [_entry("M.052", material=material)]}), encoding="utf-8"
+        )
+        return load_catalog_snapshot(str(path))
+
+    def test_loader_reads_the_short_action_and_leaves_it_none_when_absent(self, tmp_path, snapshot):
+        loaded = self._load(tmp_path, {**MATERIAL, "short_action": "write one line"})
+        assert loaded.methods["M.052"].short_action == "write one line"
+        assert snapshot.methods["M.052"].short_action is None
+
+    def test_the_limit_is_inclusive(self, tmp_path):
+        exact = "a" * SHORT_ACTION_MAX
+        assert self._load(tmp_path, {**MATERIAL, "short_action": exact}).methods["M.052"].short_action == exact
+        with pytest.raises(ValueError, match="limit is 80"):
+            self._load(tmp_path, {**MATERIAL, "short_action": exact + "a"})
+
+    def test_the_length_is_counted_like_the_reader_after_collapsing_whitespace(self, tmp_path):
+        tail = "b" * (SHORT_ACTION_MAX - 2)
+        for text in (f"a  {tail}", f"a\u00a0{tail}"):  # two spaces or a no-break space: one space for the reader
+            loaded = self._load(tmp_path, {**MATERIAL, "short_action": text})
+            assert loaded.methods["M.052"].short_action == text  # returned as written, not collapsed
+        with pytest.raises(ValueError, match="81 characters"):
+            self._load(tmp_path, {**MATERIAL, "short_action": "a " + "b" * (SHORT_ACTION_MAX - 1)})
+
+    @pytest.mark.parametrize("bad", ["", "   ", "two\nlines", "two\rlines", 42])
+    def test_an_empty_multiline_or_non_text_short_action_makes_the_snapshot_invalid(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="M.052: short_action"):
+            self._load(tmp_path, {**MATERIAL, "short_action": bad})
+
+    def test_a_method_without_a_short_action_keeps_the_hash_it_had_before_the_field(self, snapshot):
+        three_keys = json.dumps(
+            {"method": "M.052", **MATERIAL}, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        assert _raw_ref(snapshot.methods["M.052"]) == compute_content_hash(three_keys)
+
+    def test_adding_a_short_action_changes_the_hash_and_an_earlier_request_reports_it(self, snapshot):
+        registry = RecommendationRegistry(":memory:", clock=FakeClock())
+        first = RecommendationFlow(registry, snapshot).request("p-1", "req-1", PARAMS)
+        with_short = dict(snapshot.methods)
+        with_short["M.052"] = Method("M.052", "core", 0, (), MATERIAL["next_action"], MATERIAL["criterion"], "short")
+        assert _raw_ref(with_short["M.052"]) != _raw_ref(snapshot.methods["M.052"])
+        again = RecommendationFlow(registry, CatalogSnapshot("rev-2", with_short)).request("p-1", "req-1", PARAMS)
+        assert again.result.recommendation_ref == first.result.recommendation_ref
+        assert FLAG_MATERIAL_CHANGED in again.flags and again.method is None
+
+    def test_the_command_line_returns_the_short_action_or_null(self, tmp_path, capsys):
+        db = str(tmp_path / "registry.db")
+        assert main(["--db", db, "init"]) == 0
+        capsys.readouterr()
+        snapshot_path = tmp_path / "catalog.json"
+        snapshot_path.write_text(
+            json.dumps(
+                {
+                    "source_revision": "r",
+                    "methods": [
+                        _entry("M.052", order=0, material={**MATERIAL, "short_action": "write one line"}),
+                        _entry("M.026", order=1),
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def request(request_id):
+            argv = ["--db", db, "request", "--snapshot", str(snapshot_path), "--person", "p-1",
+                    "--request-id", request_id, "--params-json", json.dumps(PARAMS)]
+            assert main(argv) == 0
+            return json.loads(capsys.readouterr().out)
+
+        first = request("req-1")
+        assert first["method_code"] == "M.052" and first["short_action"] == "write one line"
+        assert main(["--db", db, "confirm", "--ref", first["recommendation_ref"], "--surface", "morning-message"]) == 0
+        capsys.readouterr()
+        second = request("req-2")
+        assert second["method_code"] == "M.026" and second["short_action"] is None
